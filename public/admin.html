@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EESA Admin Dashboard</title>
+    <link rel="stylesheet" href="admin.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>EESA Admin Panel</h1>
+            <p>Freshers Party 2026 | Management Dashboard</p>
+        </header>
+
+        <section id="loginSection" class="card">
+            <h2>Admin Login</h2>
+
+            <form id="loginForm">
+                <label for="username">Username</label>
+                <input id="username" name="username" required>
+
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" required>
+
+                <button type="submit">Login</button>
+            </form>
+
+            <p id="loginMessage" class="message" role="status"></p>
+        </section>
+
+        <section id="dashboardSection" hidden>
+            <div class="dashboard-heading">
+                <div>
+                    <h2>Dashboard Overview</h2>
+                    <p>Manage eligible students and registrations.</p>
+                </div>
+                <button id="logoutButton" class="secondary">Logout</button>
+            </div>
+
+        <div class="stats">
+            <div class="card">
+                <p>Eligible Students</p>
+                <h3 id="eligibleCount">0</h3>
+            </div>
+        
+            <div class="card">
+                <p>Total Registrations</p>
+                <h3 id="registrationCount">0</h3>
+            </div>
+        
+            <div class="card">
+                <p>Successful Payments</p>
+                <h3 id="paidCount">0</h3>
+            </div>
+        
+            <div class="card">
+                <p>Pending Payments</p>
+                <h3 id="pendingCount">0</h3>
+            </div>
+        </div>
+
+            <section class="card">
+                <h2>Upload Eligible Student List</h2>
+                <p>Upload an Excel (.xlsx/.xls) or CSV file containing College IDs.</p>
+
+                <p class="hint">
+                    Recommended format: a column headed <strong>College ID</strong>.
+                    Existing eligible IDs will be preserved.
+                </p>
+
+                <form id="uploadForm">
+                    <label for="studentFile">Student List</label>
+                    <input id="studentFile" name="studentFile" type="file" accept=".xlsx,.xls,.csv" required>
+
+                    <button type="submit">Upload Student List</button>
+                </form>
+
+                <p id="uploadMessage" class="message" role="status"></p>
+            </section>
+
+            <section class="card">
+    <h2>Student Registrations</h2>
+
+    <input
+        type="search"
+        id="studentSearch"
+        placeholder="Search name, College ID, or registration ID..."
+        autocomplete="off"
+    >
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>College ID</th>
+                    <th>Registration ID</th>
+                    <th>Payment</th>
+                    <th>Transaction ID</th>
+                    <th>Registered At</th>
+                </tr>
+            </thead>
+
+            <tbody id="studentTableBody">
+                <tr>
+                    <td colspan="6">Loading registrations...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <p id="studentMessage" class="message" role="status"></p>
+</section>
+        </section>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+
+</html>

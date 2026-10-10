@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>EESA | Freshers Party</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <header>
+        <h2>EESA</h2>
+        <span>Electronic Engineering Student Association</span>
+    </header>
+
+    <main>
+        <section class="hero">
+            <p class="tag">JSPM UNIVERSITY</p>
+
+            <h1>Freshers Party 2026</h1>
+
+            <p>
+                Welcome to a new beginning!
+                Register for the EESA Freshers Party.
+            </p>
+
+            <button onclick="showRegistration()">
+                Register Now
+            </button>
+        </section>
+
+        <section id="registration" class="registration hidden">
+            <h2>Student Registration</h2>
+
+            <form id="registrationForm">
+
+                <label for="name">Full Name</label>
+                <input id="name" name="name" type="text" required>
+
+                <label for="collegeId">College ID</label>
+                <input id="collegeId" name="collegeId" type="text" required>
+
+                <label for="department">Department</label>
+                <select id="department" name="department" required>
+                    <option value="">Select Department</option>
+                    <option value="ENTC">ENTC</option>
+                    <option value="Computer">Computer Engineering</option>
+                    <option value="IT">Information Technology</option>
+                    <option value="Mechanical">Mechanical Engineering</option>
+                    <option value="Civil">Civil Engineering</option>
+                    <option value="Other">Other</option>
+                </select>
+
+                <label for="year">Academic Year</label>
+                <select id="year" name="year" required>
+                    <option value="">Select Year</option>
+                    <option value="FE">First Year</option>
+                    <option value="SE">Second Year</option>
+                    <option value="TE">Third Year</option>
+                    <option value="BE">Final Year</option>
+                </select>
+
+                <label for="mobile">Mobile Number</label>
+                <input id="mobile" name="mobile" type="tel" pattern="[0-9]{10}" maxlength="10" required>
+
+                <button type="submit">
+                    Continue to Payment
+                </button>
+
+            </form>
+
+            <p id="message"></p>
+        </section>
+    </main>
+
+    <footer>
+        © 2026 EESA | JSPM University
+    </footer>
+
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script src="script.js"></script>
+
+</body>
+
+</html>
