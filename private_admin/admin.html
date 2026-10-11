@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/1000362016.png">
     <link rel="stylesheet" href="/eesa-admin.css">
 </head>
 
@@ -15,22 +16,25 @@
     <div class="admin-wrapper">
         <header class="admin-topbar">
             <div class="topbar-brand">
-                <span class="crest-badge">⚡ EESA ADMIN</span>
+                <img src="/1000362016.png" alt="JSPM University Logo" class="admin-brand-logo">
                 <div>
-                    <h1>Committee Control Center</h1>
-                    <p>Manage Events, Registration Fees, Eligible Students & Gate Access</p>
+                    <h1>Executive Control Console</h1>
+                    <p>Department of Electronics &amp; Telecommunication Engineering • JSPM Pune</p>
                 </div>
             </div>
             <div class="topbar-actions" id="headerActions" hidden>
-                <a href="/" target="_blank" class="btn-topbar">🌐 View Public Website</a>
-                <button id="logoutButton" class="btn-topbar logout">Logout</button>
+                <a href="/" target="_blank" class="btn-topbar">Public Portal &nearr;</a>
+                <button id="logoutButton" class="btn-topbar logout">Sign Out</button>
             </div>
         </header>
 
         <!-- Admin Login Section -->
         <section id="loginSection" class="card login-card">
-            <h2>Admin Sign In</h2>
-            <p class="subtitle">Enter your EESA committee administrator credentials to manage events and admissions.</p>
+            <div class="login-header-logo">
+                <img src="/1000362016.png" alt="JSPM University Logo" class="login-logo-img">
+            </div>
+            <h2>Administrator Sign In</h2>
+            <p class="subtitle">Authenticate with your committee security credentials to access event controls and financial records.</p>
 
             <form id="loginForm">
                 <div class="form-group">
@@ -54,7 +58,7 @@
             <!-- Global Stats Ribbon -->
             <div class="stats-grid">
                 <div class="stat-card">
-                    <span class="stat-icon">🎪</span>
+                    <span class="stat-icon">📅</span>
                     <div>
                         <p>Total Events</p>
                         <h3 id="statTotalEvents">0</h3>
@@ -62,9 +66,9 @@
                 </div>
 
                 <div class="stat-card">
-                    <span class="stat-icon">📝</span>
+                    <span class="stat-icon">📋</span>
                     <div>
-                        <p>Total Registrations</p>
+                        <p>Registrations</p>
                         <h3 id="statTotalRegistrations">0</h3>
                     </div>
                 </div>
@@ -72,21 +76,21 @@
                 <div class="stat-card success">
                     <span class="stat-icon">💳</span>
                     <div>
-                        <p>Confirmed Payments</p>
+                        <p>Paid Confirmed</p>
                         <h3 id="statConfirmedPayments">0</h3>
                     </div>
                 </div>
 
                 <div class="stat-card revenue">
-                    <span class="stat-icon">💰</span>
+                    <span class="stat-icon">₹</span>
                     <div>
-                        <p>Total Revenue (INR)</p>
+                        <p>Total Revenue</p>
                         <h3 id="statTotalRevenue">₹0.00</h3>
                     </div>
                 </div>
 
                 <div class="stat-card gate">
-                    <span class="stat-icon">🚪</span>
+                    <span class="stat-icon">🛡️</span>
                     <div>
                         <p>Gate Admitted</p>
                         <h3 id="statGateCheckedIn">0</h3>
@@ -98,11 +102,11 @@
             <section class="card section-card">
                 <div class="card-header-row">
                     <div>
-                        <h2>🎪 Events Management & Registration Fees</h2>
-                        <p class="subtitle">Post new events, update registration fees, adjust dates, and toggle registrations.</p>
+                        <h2>Events &amp; Registration Configuration</h2>
+                        <p class="subtitle">Publish new events, update registration fees, adjust schedules, and manage admission availability.</p>
                     </div>
                     <button type="button" class="btn-create" onclick="openCreateEventModal()">
-                        ➕ Post New Event
+                        + Post New Event
                     </button>
                 </div>
 
@@ -133,8 +137,8 @@
             <section class="card section-card">
                 <div class="card-header-row">
                     <div>
-                        <h2>👥 Event-Specific Eligible Student Lists</h2>
-                        <p class="subtitle">Upload authorized student lists per event so only eligible students can register.</p>
+                        <h2>Eligible Student Lists &amp; Access Control</h2>
+                        <p class="subtitle">Upload authorized student rosters per event to restrict registrations exclusively to eligible candidates.</p>
                     </div>
                 </div>
 
@@ -142,17 +146,17 @@
                     <div class="upload-control-pane">
                         <form id="uploadStudentsForm">
                             <div class="form-group">
-                                <label for="uploadEventSelect">Select Event <span class="req">*</span></label>
+                                <label for="uploadEventSelect">Target Event <span class="req">*</span></label>
                                 <select id="uploadEventSelect" required></select>
                             </div>
 
                             <div class="form-group">
-                                <label for="studentFile">Excel (.xlsx/.xls) or CSV File <span class="req">*</span></label>
+                                <label for="studentFile">Excel (.xlsx/.xls) or CSV Roster <span class="req">*</span></label>
                                 <input id="studentFile" name="studentFile" type="file" accept=".xlsx,.xls,.csv" required>
                             </div>
 
                             <button type="submit" class="btn-primary" id="uploadBtn">
-                                📤 Upload & Update Eligibility List
+                                Upload &amp; Update Eligibility Roster
                             </button>
                         </form>
 
@@ -160,60 +164,196 @@
                     </div>
 
                     <div class="upload-info-pane">
-                        <h4>📋 Eligibility Guidelines</h4>
+                        <h4>Roster Format Guidelines</h4>
                         <ul>
                             <li>Excel column should have a header such as <strong>College ID</strong>, <strong>PRN</strong>, or <strong>Student ID</strong>.</li>
-                            <li>Headers are automatically sanitized and will never be inserted as students.</li>
-                            <li>Existing approved students for the selected event are preserved.</li>
-                            <li>Events set to <em>"Open to All"</em> will ignore this list and allow any enrolled student to register.</li>
+                            <li>Headers and whitespace are automatically sanitized during processing.</li>
+                            <li>Existing approved students for the selected event are retained without duplication.</li>
+                            <li>Events marked as <em>"Open to All"</em> ignore this roster and allow any college student to register.</li>
                         </ul>
                     </div>
                 </div>
             </section>
 
             <!-- GATE SCANNER & PASS VERIFIER -->
-            <section class="card section-card gate-card">
+            <section class="card section-card gate-card" id="gateSection">
                 <div class="card-header-row">
                     <div>
-                        <h2>🚪 Gate Entry Verification & QR Scanner</h2>
-                        <p class="subtitle">Scan the student's digital pass or enter Pass ID / College ID to admit them into the event.</p>
+                        <h2>Gate Check-In &amp; QR Pass Verifier</h2>
+                        <p class="subtitle">Scan digital QR passes via live camera or search by Pass ID / PRN to instantly check validity, payment status, and prevent duplicate reuse.</p>
+                    </div>
+                    <div class="gate-actions-top">
+                        <button type="button" id="btnToggleCamera" class="btn-camera-toggle">
+                            <span class="cam-icon">📷</span> <span id="camToggleText">Open Camera Scanner</span>
+                        </button>
                     </div>
                 </div>
 
+                <!-- Live Camera Scanner Viewport -->
+                <div id="qrCameraContainer" class="camera-scanner-wrapper hidden">
+                    <div class="camera-scanner-toolbar">
+                        <div class="scanner-status-indicator">
+                            <span class="live-dot"></span>
+                            <span id="cameraStatusText">Camera Active: Point at student QR code pass</span>
+                        </div>
+                        <div class="scanner-controls-right">
+                            <select id="cameraDeviceSelect" class="camera-select hidden"></select>
+                            <button type="button" id="btnCloseCamera" class="btn-camera-close">✕ Stop Camera</button>
+                        </div>
+                    </div>
+                    <div class="scanner-viewfinder-container">
+                        <div id="qrReader" class="qr-reader-viewport"></div>
+                    </div>
+                    <div class="scanner-hint-text">
+                        Tip: Hold pass steady within camera frame. Works with smartphone screens or printed tickets.
+                    </div>
+                </div>
+
+                <!-- Gate Scan Controls & Manual Input -->
                 <form id="gateVerifyForm" class="gate-form">
+                    <div class="gate-options-bar">
+                        <label class="gate-checkbox-label">
+                            <input type="checkbox" id="gateAutoAdmitCheck" checked>
+                            <span><strong>Admit Automatically</strong> (Mark attendance immediately when pass is valid)</span>
+                        </label>
+                        <label class="gate-checkbox-label">
+                            <input type="checkbox" id="gateBeepSoundCheck" checked>
+                            <span>🔊 Sound Alert</span>
+                        </label>
+                    </div>
+
                     <div class="gate-form-row">
-                        <select id="gateEventSelect" class="gate-event-dropdown">
-                            <option value="">All Events (Auto-Detect)</option>
-                        </select>
-                        <input
-                            type="text"
-                            id="gateInput"
-                            placeholder="Scan QR code pass here or enter Registration ID / College ID..."
-                            autocomplete="off"
-                            required
-                        >
-                        <button type="submit" class="btn-gate" id="gateVerifyBtn">Verify & Admit Student</button>
+                        <div class="gate-event-select-wrapper">
+                            <select id="gateEventSelect" class="gate-event-dropdown">
+                                <option value="">All Events (Auto-Detect from Pass)</option>
+                            </select>
+                        </div>
+                        <div class="gate-input-wrapper">
+                            <input
+                                type="text"
+                                id="gateInput"
+                                placeholder="Scan QR code or enter Pass ID (EESA-...), PRN, or QR Token..."
+                                autocomplete="off"
+                                required
+                            >
+                            <button type="button" id="btnClearGateInput" class="gate-input-clear hidden" title="Clear">✕</button>
+                        </div>
+                        <div class="gate-btn-group">
+                            <button type="submit" class="btn-gate" id="gateVerifyBtn">
+                                Verify &amp; Admit
+                            </button>
+                            <button type="button" class="btn-gate-preview" id="gatePreviewBtn">
+                                Check Only (Preview)
+                            </button>
+                        </div>
                     </div>
                 </form>
 
-                <div id="gateResult" class="gate-result hidden">
-                    <div id="gateStatusBadge" class="gate-badge"></div>
-                    <h3 id="gateResultTitle"></h3>
-                    <p id="gateResultDesc"></p>
+                <!-- Gate Verification Result Card -->
+                <div id="gateResult" class="gate-result hidden" role="region" aria-live="polite">
+                    <div id="gateResultBanner" class="gate-result-banner">
+                        <div id="gateStatusBadge" class="gate-badge"></div>
+                        <div class="gate-result-headings">
+                            <h3 id="gateResultTitle"></h3>
+                            <p id="gateResultDesc"></p>
+                        </div>
+                        <div id="gateResultQuickAction" class="gate-banner-action"></div>
+                    </div>
                     <div id="gateStudentDetails" class="gate-details-grid"></div>
                 </div>
+            </section>
+
+            <!-- PAYMENT RECORDS & TRANSACTION LEDGER -->
+            <section class="card section-card">
+                <div class="card-header-row">
+                    <div>
+                        <h2>Financial Ledger &amp; Payment Reconciliation</h2>
+                        <p class="subtitle">Real-time payment audit trail across events with Razorpay Payment ID, Order ID, and Bank UTR / RRN references.</p>
+                    </div>
+                    <div class="export-actions">
+                        <button type="button" class="btn-export" onclick="exportPaymentsExcel()">
+                            Export Payments (.xlsx)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Event-Wise Breakdown Cards -->
+                <div class="payment-breakdown-wrapper">
+                    <h4 class="breakdown-title">Event Revenue Distribution</h4>
+                    <div id="paymentBreakdownGrid" class="breakdown-grid">
+                        <!-- Populated dynamically by admin.js -->
+                    </div>
+                </div>
+
+                <!-- Filters & Search -->
+                <div class="table-filters-row">
+                    <div class="filter-col">
+                        <label for="paymentEventSelect">Event Filter</label>
+                        <select id="paymentEventSelect" onchange="loadPayments()"></select>
+                    </div>
+                    <div class="filter-col">
+                        <label for="paymentStatusSelect">Payment Status</label>
+                        <select id="paymentStatusSelect" onchange="loadPayments()">
+                            <option value="all">All (Paid & Pending)</option>
+                            <option value="paid" selected>Paid Only</option>
+                            <option value="pending">Pending Only</option>
+                        </select>
+                    </div>
+                    <div class="search-col">
+                        <label for="paymentSearchInput">Search Transactions</label>
+                        <input
+                            type="search"
+                            id="paymentSearchInput"
+                            placeholder="Search Payment ID, Order ID, UTR / RRN, Student, Mobile..."
+                            autocomplete="off"
+                        >
+                    </div>
+                </div>
+
+                <!-- Payment Summary Ribbon -->
+                <div class="payment-summary-strip" id="paymentSummaryStrip">
+                    <div class="summary-item">Total Transactions: <strong id="paySummaryTotal">0</strong></div>
+                    <div class="summary-item">Paid: <strong id="paySummaryPaid" class="text-success">0</strong></div>
+                    <div class="summary-item">Pending: <strong id="paySummaryPending" class="text-warning">0</strong></div>
+                    <div class="summary-item">Total Collected: <strong id="paySummaryRevenue" class="text-revenue">₹0.00</strong></div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Student Details</th>
+                                <th>Event</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Razorpay Payment ID</th>
+                                <th>Razorpay Order ID</th>
+                                <th>Bank UTR / Trans No</th>
+                                <th>Payment Mode</th>
+                                <th>Date & Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentsTableBody">
+                            <tr>
+                                <td colspan="9" class="text-center">Loading payment records...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p id="paymentsCountMessage" class="table-footer-msg"></p>
             </section>
 
             <!-- REGISTRATIONS TABLE & EXCEL EXPORT -->
             <section class="card section-card">
                 <div class="card-header-row">
                     <div>
-                        <h2>📋 Student Registrations & Attendance</h2>
-                        <p class="subtitle">Real-time payment records and entry timestamps across events.</p>
+                        <h2>Attendee Registrations &amp; Entry Log</h2>
+                        <p class="subtitle">Complete attendance records, digital passes, and physical gate check-in timestamps.</p>
                     </div>
                     <div class="export-actions">
                         <button type="button" class="btn-export" onclick="exportRegistrationsExcel()">
-                            📥 Export to Excel (.xlsx)
+                            Export to Excel (.xlsx)
                         </button>
                     </div>
                 </div>
@@ -354,6 +494,7 @@
         </div>
     </div>
 
+    <script src="/html5-qrcode.min.js"></script>
     <script src="/eesa-admin.js"></script>
 </body>
 

@@ -341,8 +341,8 @@ function showTicketModal(ticket) {
     container.innerHTML = `
         <div class="ticket-card" id="printableTicket">
             <div class="ticket-header">
-                <span class="ticket-badge">OFFICIAL EVENT ENTRY PASS</span>
-                <span class="ticket-verified">VERIFIED & CONFIRMED</span>
+                <img src="/1000362016.png" alt="JSPM University" style="height:36px; max-width:120px; object-fit:contain;">
+                <span class="ticket-verified">VERIFIED &amp; CONFIRMED</span>
             </div>
 
             <h3 class="ticket-title">${escapeHtml(ticket.eventTitle || 'EESA EVENT PASS')}</h3>
@@ -443,8 +443,8 @@ passLookupForm.addEventListener('submit', async function (e) {
         lookupResultsList.innerHTML = data.passes.map(p => `
             <div class="ticket-card">
                 <div class="ticket-header">
-                    <span class="ticket-badge">${escapeHtml(p.eventTitle)}</span>
-                    <span class="ticket-verified">PAID & CONFIRMED</span>
+                    <img src="/1000362016.png" alt="JSPM University" style="height:36px; max-width:120px; object-fit:contain;">
+                    <span class="ticket-verified">PAID &amp; CONFIRMED</span>
                 </div>
 
                 <div class="ticket-content">

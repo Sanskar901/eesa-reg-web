@@ -858,37 +858,62 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
         if (!student) {
             return res.status(404).json({
                 success: false,
-                message: "Pass not found. No matching registration record."
+                isNotFound: true,
+                message: "PASS NOT FOUND: No registration record matches this QR Code or ID."
             });
         }
 
-        if (student.payment_status !== "paid") {
+        const isUnpaid = student.payment_status !== "paid";
+        const isReused = student.checked_in === 1;
+        const isPreview = Boolean(req.body?.preview);
+
+        const studentDetails = {
+            id: student.id,
+            name: student.name,
+            collegeId: student.college_id,
+            department: student.department,
+            academicYear: student.academic_year,
+            mobile: student.mobile,
+            eventTitle: student.event_title,
+            registrationId: student.registration_id || "N/A",
+            paymentStatus: student.payment_status,
+            paymentAmountRupees: student.payment_amount ? (student.payment_amount / 100).toFixed(2) : "0.00",
+            razorpayPaymentId: student.razorpay_payment_id || "N/A",
+            razorpayOrderId: student.razorpay_order_id || "N/A",
+            utrNumber: student.utr_number || "N/A",
+            paymentMethod: (student.payment_method || "N/A").toUpperCase(),
+            checkedIn: student.checked_in === 1,
+            checkedInAt: student.checked_in_at,
+            paidAt: student.paid_at,
+            createdAt: student.created_at
+        };
+
+        if (isUnpaid) {
             return res.status(400).json({
                 success: false,
-                message: `Payment is not completed (Status: ${student.payment_status}). Entry denied.`,
-                student: {
-                    name: student.name,
-                    collegeId: student.college_id,
-                    eventTitle: student.event_title,
-                    paymentStatus: student.payment_status
-                }
+                isUnpaid: true,
+                message: `PAYMENT PENDING / NOT PAID (Status: ${student.payment_status.toUpperCase()}). Entry is forbidden.`,
+                student: studentDetails
             });
         }
 
-        if (student.checked_in === 1) {
+        if (isReused) {
             return res.status(409).json({
                 success: false,
                 alreadyCheckedIn: true,
-                message: `ALREADY CHECKED IN! Entry was recorded at ${student.checked_in_at}.`,
-                student: {
-                    name: student.name,
-                    collegeId: student.college_id,
-                    department: student.department,
-                    academicYear: student.academic_year,
-                    eventTitle: student.event_title,
-                    registrationId: student.registration_id,
-                    checkedInAt: student.checked_in_at
-                }
+                isReused: true,
+                message: `PASS REUSED! This pass was ALREADY admitted at ${student.checked_in_at}.`,
+                student: studentDetails
+            });
+        }
+
+        if (isPreview) {
+            return res.json({
+                success: true,
+                isValid: true,
+                isPreview: true,
+                message: `PASS VALID (Preview Mode): Ready to admit student into "${student.event_title}".`,
+                student: studentDetails
             });
         }
 
@@ -900,18 +925,14 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
             WHERE id = ?
         `).run(checkInTime, student.id);
 
+        studentDetails.checkedIn = true;
+        studentDetails.checkedInAt = checkInTime;
+
         res.json({
             success: true,
-            message: `ENTRY APPROVED for "${student.event_title}"!`,
-            student: {
-                name: student.name,
-                collegeId: student.college_id,
-                department: student.department,
-                academicYear: student.academic_year,
-                eventTitle: student.event_title,
-                registrationId: student.registration_id,
-                checkedInAt: checkInTime
-            }
+            isValid: true,
+            message: `PASS VALID & ENTRY APPROVED for "${student.event_title}"!`,
+            student: studentDetails
         });
 
     } catch (error) {
@@ -959,7 +980,11 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
                 r.payment_status,
                 r.registration_id,
                 r.qr_number,
+                r.razorpay_order_id,
                 r.razorpay_payment_id,
+                r.utr_number,
+                r.payment_vpa,
+                r.payment_bank,
                 r.payment_amount,
                 r.payment_method,
                 r.checked_in,
@@ -992,8 +1017,11 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
             "Registration ID": r.registration_id || "N/A",
             "QR Number": r.qr_number || "N/A",
             "Razorpay Payment ID": r.razorpay_payment_id || "N/A",
+            "Razorpay Order ID": r.razorpay_order_id || "N/A",
+            "Bank UTR / RRN / Trans No": r.utr_number || "N/A",
             "Amount (INR)": r.payment_amount ? (r.payment_amount / 100).toFixed(2) : "0.00",
             "Payment Mode": r.payment_method || "N/A",
+            "UPI VPA / Bank": r.payment_vpa || r.payment_bank || "N/A",
             "Gate Checked In": r.checked_in === 1 ? "YES" : "NO",
             "Checked In Time": r.checked_in_at || "Not Arrived",
             "Payment Time": r.paid_at || "N/A",
@@ -1017,6 +1045,216 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
     } catch (error) {
         console.error("Export error:", error.message);
         res.status(500).json({ success: false, message: "Unable to generate Excel file." });
+    }
+});
+
+// ========================================
+// PAYMENTS & TRANSACTION LEDGER ENDPOINTS
+// ========================================
+
+// Get payments ledger with summary and event-wise breakdown
+app.get("/api/admin/payments", requireAdmin, (req, res) => {
+    try {
+        const search = String(req.query.search || "").trim().slice(0, 100);
+        const eventId = req.query.eventId ? parseInt(req.query.eventId, 10) : null;
+        const status = req.query.status ? String(req.query.status).trim().toLowerCase() : "all";
+
+        let whereClauses = [];
+        let params = [];
+
+        if (eventId) {
+            whereClauses.push("r.event_id = ?");
+            params.push(eventId);
+        }
+
+        if (status && status !== "all") {
+            whereClauses.push("r.payment_status = ?");
+            params.push(status);
+        }
+
+        if (search) {
+            whereClauses.push(`(
+                r.name LIKE ?
+                OR r.college_id LIKE ?
+                OR r.mobile LIKE ?
+                OR COALESCE(r.razorpay_payment_id, '') LIKE ?
+                OR COALESCE(r.razorpay_order_id, '') LIKE ?
+                OR COALESCE(r.utr_number, '') LIKE ?
+                OR COALESCE(r.payment_vpa, '') LIKE ?
+                OR COALESCE(r.registration_id, '') LIKE ?
+            )`);
+            const s = `%${search}%`;
+            params.push(s, s, s, s, s, s, s, s);
+        }
+
+        const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+        const query = `
+            SELECT
+                r.id,
+                r.event_id,
+                e.title AS event_title,
+                e.fee_paise,
+                r.registration_id,
+                r.name,
+                r.college_id,
+                r.department,
+                r.academic_year,
+                r.mobile,
+                r.razorpay_order_id,
+                r.razorpay_payment_id,
+                r.utr_number,
+                r.payment_vpa,
+                r.payment_bank,
+                r.payment_amount,
+                r.payment_currency,
+                r.payment_method,
+                r.payment_status,
+                r.paid_at,
+                r.created_at
+            FROM registrations r
+            LEFT JOIN events e ON e.id = r.event_id
+            ${whereSql}
+            ORDER BY r.id DESC
+            LIMIT 1000
+        `;
+
+        const payments = db.prepare(query).all(...params);
+
+        // Filtered summary stats
+        let summaryQuery = `
+            SELECT
+                COUNT(*) AS totalCount,
+                COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END), 0) AS paidCount,
+                COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pendingCount,
+                COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN payment_amount ELSE 0 END), 0) AS totalRevenuePaise
+            FROM registrations r
+        `;
+        if (eventId) {
+            summaryQuery += ` WHERE r.event_id = ${eventId}`;
+        }
+        const summary = db.prepare(summaryQuery).get();
+
+        // Event-wise breakdown across all events
+        const eventBreakdown = db.prepare(`
+            SELECT
+                e.id AS event_id,
+                e.title AS event_title,
+                ROUND(e.fee_paise / 100.0, 2) AS fee_rupees,
+                COUNT(r.id) AS total_orders,
+                COALESCE(SUM(CASE WHEN r.payment_status = 'paid' THEN 1 ELSE 0 END), 0) AS paid_count,
+                ROUND(COALESCE(SUM(CASE WHEN r.payment_status = 'paid' THEN r.payment_amount ELSE 0 END), 0) / 100.0, 2) AS revenue_rupees
+            FROM events e
+            LEFT JOIN registrations r ON r.event_id = e.id
+            GROUP BY e.id
+            ORDER BY e.id ASC
+        `).all();
+
+        res.json({
+            success: true,
+            summary: {
+                totalCount: summary.totalCount,
+                paidCount: summary.paidCount,
+                pendingCount: summary.pendingCount,
+                totalRevenueRupees: (summary.totalRevenuePaise / 100.0).toFixed(2)
+            },
+            eventBreakdown,
+            payments
+        });
+    } catch (error) {
+        console.error("Payments ledger error:", error.message);
+        res.status(500).json({ success: false, message: "Unable to load payments ledger." });
+    }
+});
+
+// Export payments ledger to Excel (with all payment/order/UTR identifiers)
+app.get("/api/admin/export-payments", requireAdmin, (req, res) => {
+    try {
+        const eventId = req.query.eventId ? parseInt(req.query.eventId, 10) : null;
+        const status = req.query.status ? String(req.query.status).trim().toLowerCase() : "all";
+
+        let whereClauses = [];
+        let params = [];
+
+        if (eventId) {
+            whereClauses.push("r.event_id = ?");
+            params.push(eventId);
+        }
+
+        if (status && status !== "all") {
+            whereClauses.push("r.payment_status = ?");
+            params.push(status);
+        }
+
+        const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+        const query = `
+            SELECT
+                r.id,
+                e.title AS event_title,
+                r.name,
+                r.college_id,
+                r.department,
+                r.academic_year,
+                r.mobile,
+                r.payment_status,
+                r.payment_amount,
+                r.payment_currency,
+                r.payment_method,
+                r.razorpay_payment_id,
+                r.razorpay_order_id,
+                r.utr_number,
+                r.payment_vpa,
+                r.payment_bank,
+                r.registration_id,
+                r.paid_at,
+                r.created_at
+            FROM registrations r
+            LEFT JOIN events e ON e.id = r.event_id
+            ${whereSql}
+            ORDER BY r.id DESC
+        `;
+
+        const rows = db.prepare(query).all(...params);
+
+        const exportData = rows.map((r, index) => ({
+            "Sr No": index + 1,
+            "Event Title": r.event_title || "General Event",
+            "Student Name": r.name,
+            "College ID": r.college_id,
+            "Mobile Number": r.mobile,
+            "Department": r.department,
+            "Academic Year": r.academic_year,
+            "Amount (INR)": r.payment_amount ? (r.payment_amount / 100).toFixed(2) : "0.00",
+            "Payment Status": (r.payment_status || "PENDING").toUpperCase(),
+            "Razorpay Payment ID": r.razorpay_payment_id || "N/A",
+            "Razorpay Order ID": r.razorpay_order_id || "N/A",
+            "Bank UTR / RRN / Trans No": r.utr_number || "N/A",
+            "Payment Mode": (r.payment_method || "N/A").toUpperCase(),
+            "UPI VPA": r.payment_vpa || "N/A",
+            "Bank / Wallet": r.payment_bank || "N/A",
+            "Pass Registration ID": r.registration_id || "N/A",
+            "Payment Timestamp": r.paid_at || "N/A",
+            "Order Created At": r.created_at
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Payment Ledger");
+
+        const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+        const filename = eventId
+            ? `EESA_Event_${eventId}_Payment_Ledger.xlsx`
+            : "EESA_All_Events_Payment_Ledger.xlsx";
+
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.send(buffer);
+
+    } catch (error) {
+        console.error("Export payments error:", error.message);
+        res.status(500).json({ success: false, message: "Unable to export payments." });
     }
 });
 
@@ -1305,6 +1543,17 @@ app.post("/api/verify-payment", async (req, res) => {
         });
         const qrImage = await QRCode.toDataURL(qrData);
 
+        const utrNumber = (
+            payment.acquirer_data?.rrn ||
+            payment.acquirer_data?.upi_transaction_id ||
+            payment.acquirer_data?.bank_transaction_no ||
+            payment.acquirer_data?.auth_code ||
+            payment.acquirer_data?.arn ||
+            "N/A"
+        );
+        const paymentVpa = payment.vpa || "";
+        const paymentBank = payment.bank || payment.wallet || "";
+
         db.prepare(`
             UPDATE registrations
             SET registration_id = ?,
@@ -1313,6 +1562,9 @@ app.post("/api/verify-payment", async (req, res) => {
                 razorpay_payment_id = ?,
                 payment_currency = ?,
                 payment_method = ?,
+                utr_number = ?,
+                payment_vpa = ?,
+                payment_bank = ?,
                 payment_status = 'paid',
                 paid_at = CURRENT_TIMESTAMP
             WHERE razorpay_order_id = ?
@@ -1323,6 +1575,9 @@ app.post("/api/verify-payment", async (req, res) => {
             payment.id,
             payment.currency,
             payment.method || "online",
+            utrNumber,
+            paymentVpa,
+            paymentBank,
             razorpay_order_id
         );
 
