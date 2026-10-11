@@ -376,7 +376,7 @@ function showTicketModal(ticket) {
             </div>
 
             <h3 class="ticket-title">${escapeHtml(ticket.eventTitle || 'EESA EVENT PASS')}</h3>
-            <p class="ticket-dept">Electronic Engineering Student Association • JSPM University</p>
+            <p class="ticket-dept">Electrical and Electronics Student Association • JSPM University</p>
 
             <div class="ticket-content">
                 <div class="ticket-qr-area">
