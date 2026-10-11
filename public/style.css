@@ -1320,3 +1320,153 @@ textarea:focus {
         width: 100%;
     }
 }
+
+/* ==========================================================================
+   PRINT / PDF STYLES - STRICT SINGLE-PAGE PASS PRINTING
+   Prevents background website duplication across 7 pages
+   ========================================================================== */
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 10mm;
+    }
+
+    /* 1. Complete reset for print view */
+    html, body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+    }
+
+    /* 2. Hide all website structure and background elements */
+    header,
+    nav,
+    main,
+    footer,
+    .navbar,
+    .site-footer,
+    .hero-section,
+    .about-section,
+    .works-section,
+    .events-section,
+    .passes-section,
+    .committee-section,
+    #eventDetailsModal,
+    #registrationModal,
+    .modal-close-btn,
+    .ticket-actions-row {
+        display: none !important;
+        visibility: hidden !important;
+    }
+
+    /* 3. Reset Ticket Modal Container so it acts as standard block on 1 single page */
+    #ticketModal {
+        display: block !important;
+        position: static !important;
+        inset: auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        padding: 0 !important;
+        margin: 0 auto !important;
+        overflow: visible !important;
+        box-shadow: none !important;
+    }
+
+    #ticketModal.hidden {
+        display: block !important;
+    }
+
+    #ticketModal .modal-card {
+        display: block !important;
+        background: #ffffff !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 auto !important;
+        max-width: 650px !important;
+        width: 100% !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    #ticketViewContainer {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 auto !important;
+    }
+
+    /* 4. Ticket Card - Clean, crisp, single page without repeats */
+    #printableTicket {
+        display: block !important;
+        position: relative !important;
+        background: #ffffff !important;
+        color: #111827 !important;
+        border: 2px solid #dc2626 !important;
+        border-radius: 12px !important;
+        padding: 24px 28px !important;
+        margin: 20px auto !important;
+        max-width: 620px !important;
+        width: 100% !important;
+        box-shadow: none !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+        page-break-before: avoid !important;
+        break-before: avoid !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    #printableTicket * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    #printableTicket .ticket-header {
+        border-bottom: 2px solid #e2e8f0 !important;
+        margin-bottom: 16px !important;
+        padding-bottom: 12px !important;
+    }
+
+    #printableTicket .ticket-verified {
+        background: #fee2e2 !important;
+        color: #991b1b !important;
+        border: 1px solid #dc2626 !important;
+        font-weight: 800 !important;
+    }
+
+    #printableTicket .ticket-qr-area {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+
+    #printableTicket .ticket-qr-area img {
+        width: 150px !important;
+        height: 150px !important;
+        display: block !important;
+    }
+
+    #printableTicket .ticket-details {
+        font-size: 13px !important;
+    }
+
+    #printableTicket .ticket-field strong {
+        color: #0f172a !important;
+        font-size: 14px !important;
+    }
+
+    #printableTicket .ticket-field code {
+        color: #1d4ed8 !important;
+        font-weight: 700 !important;
+        font-size: 13px !important;
+    }
+}

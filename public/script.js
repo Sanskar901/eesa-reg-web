@@ -410,6 +410,14 @@ const passLookupForm = document.getElementById('passLookupForm');
 const lookupSubmitBtn = document.getElementById('lookupSubmitBtn');
 const lookupResultsList = document.getElementById('lookupResultsList');
 
+let currentLookupPasses = [];
+
+function viewAndPrintPass(index) {
+    const p = currentLookupPasses[index];
+    if (!p) return;
+    showTicketModal(p);
+}
+
 passLookupForm.addEventListener('submit', async function (e) {
     e.preventDefault();
 
@@ -438,9 +446,10 @@ passLookupForm.addEventListener('submit', async function (e) {
             throw new Error(data.message || 'No confirmed passes found.');
         }
 
+        currentLookupPasses = data.passes || [];
         showStatus('lookupMessage', `Found ${data.totalPasses} verified event pass(es) for your College ID!`, 'success');
 
-        lookupResultsList.innerHTML = data.passes.map(p => `
+        lookupResultsList.innerHTML = currentLookupPasses.map((p, idx) => `
             <div class="ticket-card">
                 <div class="ticket-header">
                     <img src="/1000362016.png" alt="JSPM University" style="height:36px; max-width:120px; object-fit:contain;">
@@ -487,6 +496,9 @@ passLookupForm.addEventListener('submit', async function (e) {
                     <a href="${p.qrImage}" download="EESA-${p.registrationId}.png" class="btn-ticket-download">
                         ⬇️ Download QR Pass
                     </a>
+                    <button type="button" class="btn-ticket-print" onclick="viewAndPrintPass(${idx})">
+                        🖨️ View &amp; Print Pass
+                    </button>
                 </div>
             </div>
         `).join('');
