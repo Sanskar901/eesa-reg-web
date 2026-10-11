@@ -374,8 +374,54 @@ function requireAdmin(req, res, next) {
     next();
 }
 
+// IP-based Brute-Force Rate Limiting for Admin Login
+const loginAttempts = new Map();
+
+function checkLoginRateLimit(ip) {
+    const now = Date.now();
+    const entry = loginAttempts.get(ip);
+    if (!entry) return { allowed: true };
+    if (now > entry.resetAt) {
+        loginAttempts.delete(ip);
+        return { allowed: true };
+    }
+    if (entry.count >= 5) {
+        const remainingMinutes = Math.max(1, Math.ceil((entry.resetAt - now) / 60000));
+        return { allowed: false, remainingMinutes };
+    }
+    return { allowed: true };
+}
+
+function recordFailedLogin(ip) {
+    const now = Date.now();
+    const entry = loginAttempts.get(ip) || { count: 0, resetAt: now + 15 * 60 * 1000 };
+    entry.count += 1;
+    loginAttempts.set(ip, entry);
+}
+
+function clearFailedLogin(ip) {
+    loginAttempts.delete(ip);
+}
+
+function safeStringCompare(a, b) {
+    if (typeof a !== "string" || typeof b !== "string") return false;
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+}
+
 app.post("/api/admin/login", (req, res, next) => {
     const { username, password } = req.body || {};
+    const clientIp = req.ip || req.socket.remoteAddress || "unknown";
+
+    const rateCheck = checkLoginRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+        return res.status(429).json({
+            success: false,
+            message: `Too many failed login attempts. Access temporarily restricted. Try again in ${rateCheck.remainingMinutes} minute(s).`
+        });
+    }
 
     if (
         !process.env.ADMIN_USERNAME ||
@@ -389,14 +435,17 @@ app.post("/api/admin/login", (req, res, next) => {
     }
 
     if (
-        username !== process.env.ADMIN_USERNAME ||
-        password !== process.env.ADMIN_PASSWORD
+        !safeStringCompare(username, process.env.ADMIN_USERNAME) ||
+        !safeStringCompare(password, process.env.ADMIN_PASSWORD)
     ) {
+        recordFailedLogin(clientIp);
         return res.status(401).json({
             success: false,
             message: "Invalid username or password."
         });
     }
+
+    clearFailedLogin(clientIp);
 
     req.session.regenerate((err) => {
         if (err) return next(err);
@@ -924,6 +973,8 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
         if (eventId) {
             studentQuery += " AND r.event_id = ?";
             params.push(parseInt(eventId, 10));
+        } else {
+            studentQuery += " ORDER BY r.checked_in ASC, r.id DESC";
         }
 
         const student = db.prepare(studentQuery).get(...params);
@@ -1374,6 +1425,17 @@ app.post("/api/create-order", async (req, res) => {
             });
         }
 
+        if (
+            name.trim().length > 100 ||
+            collegeId.trim().length > 50 ||
+            department.trim().length > 100 ||
+            year.trim().length > 20
+        ) {
+            return res.status(400).json({
+                error: "Input text exceeds maximum permitted character length."
+            });
+        }
+
         const targetEvent = db.prepare("SELECT * FROM events WHERE id = ?").get(parseInt(eventId, 10));
         if (!targetEvent) {
             return res.status(404).json({ error: "Selected event does not exist." });
@@ -1531,6 +1593,11 @@ app.post("/api/create-order", async (req, res) => {
 
     } catch (error) {
         console.error("Create order error:", error.message);
+        if (error.message && error.message.includes("UNIQUE constraint failed")) {
+            return res.status(409).json({
+                error: "A registration record already exists for this Student ID in this event. Use 'Find My Pass'."
+            });
+        }
         res.status(500).json({ error: "Unable to process registration: " + error.message });
     }
 });
@@ -1553,6 +1620,10 @@ app.post("/api/verify-payment", async (req, res) => {
             return res.status(400).json({ success: false, message: "Missing payment verification parameters." });
         }
 
+        if (!process.env.RAZORPAY_KEY_SECRET) {
+            return res.status(503).json({ success: false, message: "Server payment gateway secret is not configured." });
+        }
+
         // HMAC SHA256 timing-safe verification
         const expectedSignature = crypto
             .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
@@ -1566,7 +1637,7 @@ app.post("/api/verify-payment", async (req, res) => {
         );
 
         if (!isSignatureValid) {
-            return res.status(400).json({ success: false, message: "Payment signature verification failed." });
+            return res.status(400).json({ success: false, message: "Payment signature verification failed. Tampered or fraudulent data rejected." });
         }
 
         const registration = db.prepare(`
@@ -1578,6 +1649,20 @@ app.post("/api/verify-payment", async (req, res) => {
 
         if (!registration) {
             return res.status(404).json({ success: false, message: "Order record not found." });
+        }
+
+        // Replay defense: Verify this payment ID was not already credited to another registration
+        const duplicatePayment = db.prepare(`
+            SELECT id, registration_id
+            FROM registrations
+            WHERE razorpay_payment_id = ? AND id != ?
+        `).get(razorpay_payment_id, registration.id);
+
+        if (duplicatePayment) {
+            return res.status(400).json({
+                success: false,
+                message: `Fraud prevention: Payment ID ${razorpay_payment_id} was already used for pass ${duplicatePayment.registration_id}. Duplicate payment claims are rejected.`
+            });
         }
 
         if (registration.payment_status === "paid") {
@@ -1604,7 +1689,7 @@ app.post("/api/verify-payment", async (req, res) => {
             payment.amount !== registration.payment_amount ||
             payment.currency !== "INR"
         ) {
-            return res.status(400).json({ success: false, message: "Payment details do not match expected order." });
+            return res.status(400).json({ success: false, message: "Payment details do not match expected order. Fraudulent or mismatched transaction rejected." });
         }
 
         if (payment.status === "authorized") {
