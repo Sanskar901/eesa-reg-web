@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EESA Committee Admin Control Center | JSPM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="admin.css">
+</head>
+
+<body>
+    <div class="admin-wrapper">
+        <header class="admin-topbar">
+            <div class="topbar-brand">
+                <span class="crest-badge">⚡ EESA ADMIN</span>
+                <div>
+                    <h1>Committee Control Center</h1>
+                    <p>Manage Events, Registration Fees, Eligible Students & Gate Access</p>
+                </div>
+            </div>
+            <div class="topbar-actions" id="headerActions" hidden>
+                <a href="/" target="_blank" class="btn-topbar">🌐 View Public Website</a>
+                <button id="logoutButton" class="btn-topbar logout">Logout</button>
+            </div>
+        </header>
+
+        <!-- Admin Login Section -->
+        <section id="loginSection" class="card login-card">
+            <h2>Admin Sign In</h2>
+            <p class="subtitle">Enter your EESA committee administrator credentials to manage events and admissions.</p>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Administrator Username</label>
+                    <input id="username" name="username" type="text" required autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Security Password</label>
+                    <input id="password" name="password" type="password" required autocomplete="current-password">
+                </div>
+
+                <button type="submit" class="btn-primary" id="loginBtn">Sign In to Dashboard</button>
+            </form>
+
+            <div id="loginMessage" class="message hidden" role="status"></div>
+        </section>
+
+        <!-- Main Dashboard Section -->
+        <main id="dashboardSection" hidden>
+            <!-- Global Stats Ribbon -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-icon">🎪</span>
+                    <div>
+                        <p>Total Events</p>
+                        <h3 id="statTotalEvents">0</h3>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <span class="stat-icon">📝</span>
+                    <div>
+                        <p>Total Registrations</p>
+                        <h3 id="statTotalRegistrations">0</h3>
+                    </div>
+                </div>
+
+                <div class="stat-card success">
+                    <span class="stat-icon">💳</span>
+                    <div>
+                        <p>Confirmed Payments</p>
+                        <h3 id="statConfirmedPayments">0</h3>
+                    </div>
+                </div>
+
+                <div class="stat-card revenue">
+                    <span class="stat-icon">💰</span>
+                    <div>
+                        <p>Total Revenue (INR)</p>
+                        <h3 id="statTotalRevenue">₹0.00</h3>
+                    </div>
+                </div>
+
+                <div class="stat-card gate">
+                    <span class="stat-icon">🚪</span>
+                    <div>
+                        <p>Gate Admitted</p>
+                        <h3 id="statGateCheckedIn">0</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EVENT MANAGEMENT SECTION -->
+            <section class="card section-card">
+                <div class="card-header-row">
+                    <div>
+                        <h2>🎪 Events Management & Registration Fees</h2>
+                        <p class="subtitle">Post new events, update registration fees, adjust dates, and toggle registrations.</p>
+                    </div>
+                    <button type="button" class="btn-create" onclick="openCreateEventModal()">
+                        ➕ Post New Event
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Event Title</th>
+                                <th>Category</th>
+                                <th>Date & Venue</th>
+                                <th>Fee (INR)</th>
+                                <th>Status</th>
+                                <th>Eligibility</th>
+                                <th>Registrations</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsTableBody">
+                            <tr>
+                                <td colspan="8" class="text-center">Loading events...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- EVENT-SPECIFIC ELIGIBLE STUDENT UPLOAD -->
+            <section class="card section-card">
+                <div class="card-header-row">
+                    <div>
+                        <h2>👥 Event-Specific Eligible Student Lists</h2>
+                        <p class="subtitle">Upload authorized student lists per event so only eligible students can register.</p>
+                    </div>
+                </div>
+
+                <div class="upload-box-grid">
+                    <div class="upload-control-pane">
+                        <form id="uploadStudentsForm">
+                            <div class="form-group">
+                                <label for="uploadEventSelect">Select Event <span class="req">*</span></label>
+                                <select id="uploadEventSelect" required></select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="studentFile">Excel (.xlsx/.xls) or CSV File <span class="req">*</span></label>
+                                <input id="studentFile" name="studentFile" type="file" accept=".xlsx,.xls,.csv" required>
+                            </div>
+
+                            <button type="submit" class="btn-primary" id="uploadBtn">
+                                📤 Upload & Update Eligibility List
+                            </button>
+                        </form>
+
+                        <div id="uploadMessage" class="message hidden" role="status"></div>
+                    </div>
+
+                    <div class="upload-info-pane">
+                        <h4>📋 Eligibility Guidelines</h4>
+                        <ul>
+                            <li>Excel column should have a header such as <strong>College ID</strong>, <strong>PRN</strong>, or <strong>Student ID</strong>.</li>
+                            <li>Headers are automatically sanitized and will never be inserted as students.</li>
+                            <li>Existing approved students for the selected event are preserved.</li>
+                            <li>Events set to <em>"Open to All"</em> will ignore this list and allow any enrolled student to register.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- GATE SCANNER & PASS VERIFIER -->
+            <section class="card section-card gate-card">
+                <div class="card-header-row">
+                    <div>
+                        <h2>🚪 Gate Entry Verification & QR Scanner</h2>
+                        <p class="subtitle">Scan the student's digital pass or enter Pass ID / College ID to admit them into the event.</p>
+                    </div>
+                </div>
+
+                <form id="gateVerifyForm" class="gate-form">
+                    <div class="gate-form-row">
+                        <select id="gateEventSelect" class="gate-event-dropdown">
+                            <option value="">All Events (Auto-Detect)</option>
+                        </select>
+                        <input
+                            type="text"
+                            id="gateInput"
+                            placeholder="Scan QR code pass here or enter Registration ID / College ID..."
+                            autocomplete="off"
+                            required
+                        >
+                        <button type="submit" class="btn-gate" id="gateVerifyBtn">Verify & Admit Student</button>
+                    </div>
+                </form>
+
+                <div id="gateResult" class="gate-result hidden">
+                    <div id="gateStatusBadge" class="gate-badge"></div>
+                    <h3 id="gateResultTitle"></h3>
+                    <p id="gateResultDesc"></p>
+                    <div id="gateStudentDetails" class="gate-details-grid"></div>
+                </div>
+            </section>
+
+            <!-- REGISTRATIONS TABLE & EXCEL EXPORT -->
+            <section class="card section-card">
+                <div class="card-header-row">
+                    <div>
+                        <h2>📋 Student Registrations & Attendance</h2>
+                        <p class="subtitle">Real-time payment records and entry timestamps across events.</p>
+                    </div>
+                    <div class="export-actions">
+                        <button type="button" class="btn-export" onclick="exportRegistrationsExcel()">
+                            📥 Export to Excel (.xlsx)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-filters-row">
+                    <div class="filter-col">
+                        <label for="filterEventSelect">Filter by Event</label>
+                        <select id="filterEventSelect" onchange="loadRegistrations()"></select>
+                    </div>
+                    <div class="search-col">
+                        <label for="studentSearch">Search Attendees</label>
+                        <input
+                            type="search"
+                            id="studentSearch"
+                            placeholder="🔍 Search name, College ID, mobile, or registration ID..."
+                            autocomplete="off"
+                        >
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>College ID</th>
+                                <th>Event</th>
+                                <th>Dept / Year</th>
+                                <th>Mobile</th>
+                                <th>Pass ID</th>
+                                <th>Payment</th>
+                                <th>Gate Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="registrationsTableBody">
+                            <tr>
+                                <td colspan="9" class="text-center">Loading registrations...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p id="registrationsCountMessage" class="table-footer-msg"></p>
+            </section>
+        </main>
+    </div>
+
+    <!-- POST / EDIT EVENT MODAL -->
+    <div id="eventModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-card">
+            <button class="modal-close" onclick="closeEventModal()">&times;</button>
+            <h3 id="eventModalTitle">Post New Event</h3>
+            <p class="modal-subtitle">Configure event parameters, description, schedule, and registration fee.</p>
+
+            <form id="eventForm" class="modal-form">
+                <input type="hidden" id="modalEventId" value="">
+
+                <div class="form-group">
+                    <label for="modalEventTitle">Event Title <span class="req">*</span></label>
+                    <input type="text" id="modalEventTitle" placeholder="e.g. Circuitron National Hackathon" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="modalEventTagline">Catchy Tagline / Brief Summary</label>
+                    <input type="text" id="modalEventTagline" placeholder="e.g. 24 hours of hardware innovation & circuit fabrication">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalEventCategory">Category <span class="req">*</span></label>
+                        <select id="modalEventCategory" required>
+                            <option value="Technical">Technical</option>
+                            <option value="Cultural">Cultural</option>
+                            <option value="Workshop">Workshop</option>
+                            <option value="Hackathon">Hackathon</option>
+                            <option value="Competition">Competition</option>
+                            <option value="Seminar">Seminar</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="modalEventFee">Registration Fee (₹ INR) <span class="req">*</span></label>
+                        <input type="number" id="modalEventFee" min="0" step="1" placeholder="0 for Free, 100 for ₹100" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalEventDate">Event Date <span class="req">*</span></label>
+                        <input type="text" id="modalEventDate" placeholder="e.g. November 14, 2026" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="modalEventTime">Time Schedule</label>
+                        <input type="text" id="modalEventTime" placeholder="e.g. 9:00 AM - 5:00 PM">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="modalEventVenue">Venue / Lab <span class="req">*</span></label>
+                    <input type="text" id="modalEventVenue" placeholder="e.g. Main Auditorium / Lab 304" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalEventStatus">Registration Status <span class="req">*</span></label>
+                        <select id="modalEventStatus" required>
+                            <option value="active">Active (Open for Registration)</option>
+                            <option value="upcoming">Upcoming (Preview Only)</option>
+                            <option value="closed">Closed (Registrations Ended)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="modalEventEligibility">Eligibility Restriction <span class="req">*</span></label>
+                        <select id="modalEventEligibility" required>
+                            <option value="1">Restricted (Only Uploaded Student List)</option>
+                            <option value="0">Open to All (Any College Student)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="modalEventDesc">Full Description <span class="req">*</span></label>
+                    <textarea id="modalEventDesc" rows="4" placeholder="Detailed event overview, agenda, benefits, and prerequisites..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="modalEventRules">Guidelines & Rules (Optional)</label>
+                    <textarea id="modalEventRules" rows="3" placeholder="Entry rules, team criteria, safety guidelines..."></textarea>
+                </div>
+
+                <button type="submit" class="btn-primary" id="saveEventBtn">Save & Publish Event</button>
+            </form>
+
+            <div id="eventModalMessage" class="message hidden"></div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+
+</html>

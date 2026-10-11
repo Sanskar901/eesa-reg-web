@@ -4,86 +4,468 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>EESA | Freshers Party</title>
-
+    <title>EESA | Electronic Engineering Student Association • JSPM University</title>
+    <meta name="description" content="Official website of the Electronic Engineering Student Association (EESA) at JSPM University. Explore our works, committee, upcoming workshops, hackathons, and event registrations.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+        <div class="nav-container">
+            <a href="#" class="brand">
+                <span class="brand-crest">⚡ EESA</span>
+                <div class="brand-text">
+                    <h1 class="brand-title">EESA JSPM</h1>
+                    <span class="brand-sub">Electronic Engineering Student Association</span>
+                </div>
+            </a>
 
-    <header>
-        <h2>EESA</h2>
-        <span>Electronic Engineering Student Association</span>
+            <nav class="nav-menu" id="navMenu">
+                <a href="#about" class="nav-link">About Us</a>
+                <a href="#works" class="nav-link">Our Works</a>
+                <a href="#events" class="nav-link active">Events & Updates</a>
+                <a href="#passes" class="nav-link">Find My Pass</a>
+                <a href="#committee" class="nav-link">Committee</a>
+            </nav>
+
+            <div class="nav-actions">
+                <a href="#events" class="btn-nav-primary">Register for Event</a>
+            </div>
+        </div>
     </header>
 
     <main>
-        <section class="hero">
-            <p class="tag">JSPM UNIVERSITY</p>
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-container">
+                <div class="hero-badge">
+                    <span>🌟 OFFICIAL DEPARTMENT ASSOCIATION • JSPM UNIVERSITY</span>
+                </div>
+                <h2 class="hero-heading">
+                    Innovate. Engineer. <span>Lead the Future.</span>
+                </h2>
+                <p class="hero-subtext">
+                    Welcome to the <strong>Electronic Engineering Student Association (EESA)</strong>. 
+                    We are the premier student-led technical and cultural body empowering future engineers through 
+                    state-of-the-art hackathons, industrial training, robotics competitions, and vibrant celebrations.
+                </p>
 
-            <h1>Freshers Party 2026</h1>
+                <div class="hero-cta-group">
+                    <a href="#events" class="btn-hero-primary">Browse Events & Register ➔</a>
+                    <a href="#works" class="btn-hero-secondary">Explore Our Works & Initiatives</a>
+                </div>
 
-            <p>
-                Welcome to a new beginning!
-                Register for the EESA Freshers Party.
-            </p>
-
-            <button onclick="showRegistration()">
-                Register Now
-            </button>
+                <!-- Stats Highlight -->
+                <div class="stats-ribbon">
+                    <div class="stat-box">
+                        <span class="stat-number">500+</span>
+                        <span class="stat-label">Active Student Members</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-number">20+</span>
+                        <span class="stat-label">Annual Technical & Cultural Events</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-number">15+</span>
+                        <span class="stat-label">Industry & Lab Workshops</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-number">100%</span>
+                        <span class="stat-label">Hands-on Engineering Exposure</span>
+                    </div>
+                </div>
+            </div>
         </section>
 
-        <section id="registration" class="registration hidden">
-            <h2>Student Registration</h2>
+        <!-- About EESA Section -->
+        <section id="about" class="section about-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-tag">WHO WE ARE</span>
+                    <h3 class="section-title">About EESA Committee</h3>
+                    <p class="section-desc">
+                        Nurturing technical brilliance and leadership in Electronics & Telecommunication Engineering.
+                    </p>
+                </div>
 
-            <form id="registrationForm">
+                <div class="about-grid">
+                    <div class="about-card glass">
+                        <div class="card-icon">🎯</div>
+                        <h4>Our Mission</h4>
+                        <p>
+                            To bridge the gap between classroom curriculum and industry demands by providing practical, 
+                            hands-on hardware, embedded systems, and robotics experience to every engineering student.
+                        </p>
+                    </div>
 
-                <label for="name">Full Name</label>
-                <input id="name" name="name" type="text" required>
+                    <div class="about-card glass">
+                        <div class="card-icon">🚀</div>
+                        <h4>Our Vision</h4>
+                        <p>
+                            To cultivate a vibrant community of innovative thinkers, researchers, and tech leaders 
+                            ready to tackle real-world global challenges across smart hardware and digital intelligence.
+                        </p>
+                    </div>
 
-                <label for="collegeId">College ID</label>
-                <input id="collegeId" name="collegeId" type="text" required>
+                    <div class="about-card glass">
+                        <div class="card-icon">🤝</div>
+                        <h4>Holistic Culture</h4>
+                        <p>
+                            EESA is not just about circuits and code. We celebrate camaraderie, cultural diversity, 
+                            sports tournaments, and student mentorship throughout the academic year.
+                        </p>
+                    </div>
+                </div>
 
-                <label for="department">Department</label>
-                <select id="department" name="department" required>
-                    <option value="">Select Department</option>
-                    <option value="ENTC">ENTC</option>
-                    <option value="Computer">Computer Engineering</option>
-                    <option value="IT">Information Technology</option>
-                    <option value="Mechanical">Mechanical Engineering</option>
-                    <option value="Civil">Civil Engineering</option>
-                    <option value="Other">Other</option>
-                </select>
+                <!-- Core Domains -->
+                <div class="domains-wrapper">
+                    <h4 class="domains-title">Our Core Technical & Creative Pillars</h4>
+                    <div class="domain-pills">
+                        <span class="domain-pill">🤖 Embedded Systems & IoT</span>
+                        <span class="domain-pill">⚡ PCB Design & Fabrication</span>
+                        <span class="domain-pill">🏎️ Robotics & Automation</span>
+                        <span class="domain-pill">💻 VLSI & Digital Design</span>
+                        <span class="domain-pill">🎉 Cultural & Arts Wing</span>
+                        <span class="domain-pill">🌱 Social Impact & E-Waste Drives</span>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-                <label for="year">Academic Year</label>
-                <select id="year" name="year" required>
-                    <option value="">Select Year</option>
-                    <option value="FE">First Year</option>
-                    <option value="SE">Second Year</option>
-                    <option value="TE">Third Year</option>
-                    <option value="BE">Final Year</option>
-                </select>
+        <!-- Our Works & Initiatives Section -->
+        <section id="works" class="section works-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-tag">INNOVATION IN ACTION</span>
+                    <h3 class="section-title">Our Works & Key Initiatives</h3>
+                    <p class="section-desc">
+                        Explore the flagship technical, industrial, and social projects spearheaded by EESA.
+                    </p>
+                </div>
 
-                <label for="mobile">Mobile Number</label>
-                <input id="mobile" name="mobile" type="tel" pattern="[0-9]{10}" maxlength="10" required>
+                <div class="works-grid">
+                    <div class="work-card">
+                        <div class="work-header">
+                            <span class="work-badge">WORKSHOP</span>
+                            <span class="work-year">Annual Initiative</span>
+                        </div>
+                        <h4>Hands-on ESP32 & IoT Microcontroller Bootcamps</h4>
+                        <p>
+                            Intensive training modules where students design real-time sensor networks, MQTT cloud gateways, 
+                            and smartphone-controlled IoT appliances with complete hardware kits.
+                        </p>
+                        <div class="work-stats">
+                            <span>👥 250+ Students Trained</span>
+                            <span>📦 50+ Projects Built</span>
+                        </div>
+                    </div>
 
-                <button type="submit">
-                    Continue to Payment
-                </button>
+                    <div class="work-card">
+                        <div class="work-header">
+                            <span class="work-badge">INDUSTRY EXPOSURE</span>
+                            <span class="work-year">Study Tours</span>
+                        </div>
+                        <h4>Industrial Visits to Electronics & Auto Majors</h4>
+                        <p>
+                            On-site industrial tours to leading manufacturing plants including Tata AutoComp, 
+                            Bharat Electronics, and semiconductor fabrication units in the Pune tech corridor.
+                        </p>
+                        <div class="work-stats">
+                            <span>🏭 5+ Plants Visited</span>
+                            <span>🎓 Direct Engineer Mentorship</span>
+                        </div>
+                    </div>
 
-            </form>
+                    <div class="work-card">
+                        <div class="work-header">
+                            <span class="work-badge">COMPETITION</span>
+                            <span class="work-year">National Level</span>
+                        </div>
+                        <h4>Circuitron: Hardware & Circuit Hackathon</h4>
+                        <p>
+                            A grueling 24-hour national challenge where inter-college teams design, simulate, 
+                            and etch functional analog and digital circuits to solve critical industrial problems.
+                        </p>
+                        <div class="work-stats">
+                            <span>🏆 ₹25,000 Cash Pool</span>
+                            <span>⚡ 40+ Competing Teams</span>
+                        </div>
+                    </div>
 
-            <p id="message"></p>
+                    <div class="work-card">
+                        <div class="work-header">
+                            <span class="work-badge">SOCIAL IMPACT</span>
+                            <span class="work-year">Community Outreach</span>
+                        </div>
+                        <h4>E-Waste Awareness & Safe Recycling Drives</h4>
+                        <p>
+                            Campus-wide collection campaigns gathering discarded circuit boards, batteries, and appliances 
+                            for certified scientific disposal and component re-purposing for student laboratories.
+                        </p>
+                        <div class="work-stats">
+                            <span>♻️ 300+ kg Recycled</span>
+                            <span>🌱 Green Campus Certified</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Events & Live Updates Section -->
+        <section id="events" class="section events-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-tag">LIVE REGISTRATIONS & UPDATES</span>
+                    <h3 class="section-title">Events Hub & Portal</h3>
+                    <p class="section-desc">
+                        Select an event to view full details, eligibility rules, and complete your registration with instant digital QR pass.
+                    </p>
+                </div>
+
+                <!-- Event Filter Bar -->
+                <div class="filter-bar">
+                    <button class="filter-btn active" data-filter="all" onclick="filterEvents('all', this)">All Events</button>
+                    <button class="filter-btn" data-filter="Technical" onclick="filterEvents('Technical', this)">Technical</button>
+                    <button class="filter-btn" data-filter="Cultural" onclick="filterEvents('Cultural', this)">Cultural</button>
+                    <button class="filter-btn" data-filter="Workshop" onclick="filterEvents('Workshop', this)">Workshops</button>
+                    <button class="filter-btn" data-filter="Hackathon" onclick="filterEvents('Hackathon', this)">Hackathons</button>
+                    <button class="filter-btn" data-filter="Competition" onclick="filterEvents('Competition', this)">Competitions</button>
+                </div>
+
+                <!-- Events Loading State -->
+                <div id="eventsLoading" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Fetching active events and registration updates...</p>
+                </div>
+
+                <!-- Events Grid -->
+                <div id="eventsGrid" class="events-grid hidden"></div>
+            </div>
+        </section>
+
+        <!-- Find My Pass / Ticket Desk Section -->
+        <section id="passes" class="section passes-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-tag">TICKET DESK</span>
+                    <h3 class="section-title">Find & Download Your Event Pass</h3>
+                    <p class="section-desc">
+                        Already registered and paid for an EESA event? Enter your College ID and registered Mobile Number below to retrieve all your QR passes.
+                    </p>
+                </div>
+
+                <div class="pass-lookup-card glass">
+                    <form id="passLookupForm" class="lookup-form">
+                        <div class="lookup-inputs">
+                            <div class="form-group">
+                                <label for="lookupCollegeId">College ID / PRN <span class="req">*</span></label>
+                                <input type="text" id="lookupCollegeId" placeholder="e.g. 22459020043" required autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label for="lookupMobile">Registered Mobile Number <span class="req">*</span></label>
+                                <input type="tel" id="lookupMobile" pattern="[0-9]{10}" maxlength="10" placeholder="10-digit mobile number" required autocomplete="tel">
+                            </div>
+                        </div>
+
+                        <button type="submit" id="lookupSubmitBtn" class="btn-primary-block">
+                            🔍 Retrieve My Event Passes
+                        </button>
+                    </form>
+
+                    <div id="lookupMessage" class="status-msg hidden"></div>
+
+                    <!-- Pass Results List -->
+                    <div id="lookupResultsList" class="passes-results-list hidden"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Committee Section -->
+        <section id="committee" class="section committee-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-tag">THE DRIVING FORCE</span>
+                    <h3 class="section-title">EESA Core Committee 2026</h3>
+                    <p class="section-desc">
+                        Dedicated faculty mentors and student coordinators steering innovation.
+                    </p>
+                </div>
+
+                <div class="committee-grid">
+                    <div class="member-card">
+                        <div class="member-avatar">👨‍🏫</div>
+                        <h4>Dr. R. K. Patil</h4>
+                        <span class="member-role">Faculty Mentor & HOD</span>
+                        <p class="member-dept">Department of E&TC Engineering</p>
+                    </div>
+
+                    <div class="member-card">
+                        <div class="member-avatar">👩‍🏫</div>
+                        <h4>Prof. S. M. Deshmukh</h4>
+                        <span class="member-role">Faculty Coordinator</span>
+                        <p class="member-dept">EESA Committee Staff In-Charge</p>
+                    </div>
+
+                    <div class="member-card highlight">
+                        <div class="member-avatar">⚡</div>
+                        <h4>Sanskar Joshi</h4>
+                        <span class="member-role">Student President</span>
+                        <p class="member-dept">Executive Leadership & Operations</p>
+                    </div>
+
+                    <div class="member-card">
+                        <div class="member-avatar">🚀</div>
+                        <h4>Avanti Shinde</h4>
+                        <span class="member-role">Vice President</span>
+                        <p class="member-dept">Event Management & Coordination</p>
+                    </div>
+
+                    <div class="member-card">
+                        <div class="member-avatar">💻</div>
+                        <h4>Rohan Kulkarni</h4>
+                        <span class="member-role">Technical Secretary</span>
+                        <p class="member-dept">Hackathons & Lab Workshops</p>
+                    </div>
+
+                    <div class="member-card">
+                        <div class="member-avatar">🎨</div>
+                        <h4>Neha Sharma</h4>
+                        <span class="member-role">Cultural Secretary</span>
+                        <p class="member-dept">Freshers, Arts & Annual Gala</p>
+                    </div>
+                </div>
+            </div>
         </section>
     </main>
 
-    <footer>
-        © 2026 EESA | JSPM University
+    <!-- EVENT DETAILS MODAL -->
+    <div id="eventDetailsModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="closeModal('eventDetailsModal')">&times;</button>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <!-- EVENT REGISTRATION MODAL -->
+    <div id="registrationModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-card">
+            <button class="modal-close-btn" onclick="closeModal('registrationModal')">&times;</button>
+            
+            <div class="modal-header">
+                <span class="badge-tag" id="regModalCategory">EVENT</span>
+                <h3 id="regModalTitle">Register for Event</h3>
+                <span class="fee-badge-lg" id="regModalFee">Fee: ₹0.00</span>
+            </div>
+
+            <p class="modal-sub">
+                Enter your student credentials to verify eligibility and generate your official digital entry pass.
+            </p>
+
+            <form id="eventRegistrationForm" class="reg-form" novalidate>
+                <input type="hidden" id="formEventId" value="">
+
+                <div class="form-group">
+                    <label for="formStudentName">Full Name <span class="req">*</span></label>
+                    <input type="text" id="formStudentName" placeholder="e.g. Rahul Sharma" required autocomplete="name">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="formCollegeId">College ID / PRN <span class="req">*</span></label>
+                        <input type="text" id="formCollegeId" placeholder="e.g. 22459020043" required autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="formMobile">Mobile (WhatsApp) <span class="req">*</span></label>
+                        <input type="tel" id="formMobile" pattern="[0-9]{10}" maxlength="10" placeholder="10-digit number" required autocomplete="tel">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="formDepartment">Department <span class="req">*</span></label>
+                        <select id="formDepartment" required>
+                            <option value="">Select Department</option>
+                            <option value="ENTC">E&TC Engineering</option>
+                            <option value="Computer">Computer Engineering</option>
+                            <option value="IT">Information Technology</option>
+                            <option value="Mechanical">Mechanical Engineering</option>
+                            <option value="Civil">Civil Engineering</option>
+                            <option value="Other">Other Department</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="formYear">Academic Year <span class="req">*</span></label>
+                        <select id="formYear" required>
+                            <option value="">Select Year</option>
+                            <option value="FE">First Year (FE)</option>
+                            <option value="SE">Second Year (SE)</option>
+                            <option value="TE">Third Year (TE)</option>
+                            <option value="BE">Final Year (BE)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="security-callout">
+                    🔒 Real-time student eligibility verification & secure payment powered by Razorpay.
+                </div>
+
+                <button type="submit" id="regSubmitBtn" class="btn-primary-block">
+                    Proceed to Confirm Registration
+                </button>
+            </form>
+
+            <div id="regStatusMsg" class="status-msg hidden"></div>
+        </div>
+    </div>
+
+    <!-- TICKET SUCCESS MODAL -->
+    <div id="ticketModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-card ticket-modal-card">
+            <button class="modal-close-btn" onclick="closeModal('ticketModal')">&times;</button>
+            
+            <div class="ticket-view" id="ticketViewContainer">
+                <!-- Injected via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <div class="footer-container">
+            <div class="footer-brand">
+                <h3>⚡ EESA JSPM UNIVERSITY</h3>
+                <p>Electronic Engineering Student Association • Established 2018</p>
+                <p>Department of E&TC Engineering, JSPM University Campus, Pune, Maharashtra.</p>
+            </div>
+            <div class="footer-links">
+                <h4>Quick Links</h4>
+                <a href="#about">About Association</a>
+                <a href="#works">Our Works</a>
+                <a href="#events">Events Hub</a>
+                <a href="#passes">Ticket Lookup</a>
+                <a href="#committee">Committee</a>
+            </div>
+            <div class="footer-contact">
+                <h4>Connect With EESA</h4>
+                <p>📧 eesa.official@jspm.edu.in</p>
+                <p>📞 Coordinator: +91 98765 43210</p>
+                <p>📍 Room 304, Tech Wing, JSPM Campus</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>© 2026 Electronic Engineering Student Association (EESA). All Rights Reserved.</p>
+        </div>
     </footer>
 
+    <!-- Razorpay Checkout SDK -->
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="script.js"></script>
-
 </body>
 
 </html>
