@@ -20,6 +20,7 @@ app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
     res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     next();
 });
 
@@ -1851,6 +1852,15 @@ app.post("/api/find-pass", async (req, res) => {
         console.error("Find pass error:", error.message);
         res.status(500).json({ success: false, message: "Error retrieving passes: " + error.message });
     }
+});
+
+// Global centralized error-handling middleware
+app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+        return res.status(400).json({ success: false, message: "Malformed JSON payload rejected." });
+    }
+    console.error("Unhandled server exception:", err);
+    res.status(500).json({ success: false, message: "Internal server error occurred." });
 });
 
 // Start server
