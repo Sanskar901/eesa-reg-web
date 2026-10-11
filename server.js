@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const Razorpay = require("razorpay");
 const Database = require("better-sqlite3");
 const QRCode = require("qrcode");
@@ -72,7 +73,16 @@ app.get(["/eesa-admin.js", `${ADMIN_PATH}/admin.js`], (req, res) => {
 // DATABASE INITIALIZATION & OPTIMIZATIONS
 // ========================================
 
-const db = new Database(path.join(__dirname, "eesa.db"));
+const DB_PATH = process.env.DB_PATH
+    ? path.resolve(process.env.DB_PATH)
+    : path.join(__dirname, "eesa.db");
+
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const db = new Database(DB_PATH);
 
 // Enable WAL mode & timeout for high-concurrency reliability
 db.pragma("journal_mode = WAL");
@@ -960,6 +970,20 @@ app.post("/api/admin/reset-checkin", requireAdmin, (req, res) => {
     } catch (error) {
         console.error("Reset check-in error:", error.message);
         res.status(500).json({ success: false, message: "Unable to reset check-in." });
+    }
+});
+
+// Database Full Backup Download (One-Click Backup)
+app.get("/api/admin/backup-db", requireAdmin, (req, res) => {
+    try {
+        if (!fs.existsSync(DB_PATH)) {
+            return res.status(404).json({ success: false, message: "Database file not found." });
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        res.download(DB_PATH, `eesa_backup_${timestamp}.db`);
+    } catch (error) {
+        console.error("Database backup download error:", error.message);
+        res.status(500).json({ success: false, message: "Failed to download database backup." });
     }
 });
 
