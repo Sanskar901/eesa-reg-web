@@ -25,6 +25,7 @@ const gateResultDesc = document.getElementById("gateResultDesc");
 const gateStudentDetails = document.getElementById("gateStudentDetails");
 const btnToggleCamera = document.getElementById("btnToggleCamera");
 const btnCloseCamera = document.getElementById("btnCloseCamera");
+const btnSwitchCamera = document.getElementById("btnSwitchCamera");
 const qrCameraContainer = document.getElementById("qrCameraContainer");
 const cameraStatusText = document.getElementById("cameraStatusText");
 const cameraDeviceSelect = document.getElementById("cameraDeviceSelect");
@@ -490,6 +491,10 @@ let html5QrScanner = null;
 let isScanningActive = false;
 let isScanProcessing = false;
 let isGateVerifying = false;
+let availableCameraDevices = [];
+let selectedCameraDeviceId = null;
+let currentFacingMode = "environment";
+let activeCameraIndex = 0;
 let lastAdmittedInfo = {
     code: null,
     studentId: null,
@@ -556,31 +561,75 @@ async function startQrCamera() {
     try {
         if (qrCameraContainer) qrCameraContainer.classList.remove("hidden");
         if (btnToggleCamera) btnToggleCamera.classList.add("hidden");
-        if (cameraStatusText) cameraStatusText.textContent = "Requesting camera access...";
+        if (cameraStatusText) cameraStatusText.textContent = "Requesting back camera access...";
 
         if (!html5QrScanner) {
             html5QrScanner = new Html5Qrcode("qrReader");
         }
 
-        const devices = await Html5Qrcode.getCameras().catch(() => []);
-        if (!devices || devices.length === 0) {
+        availableCameraDevices = await Html5Qrcode.getCameras().catch(() => []);
+        if (!availableCameraDevices || availableCameraDevices.length === 0) {
             if (cameraStatusText) cameraStatusText.textContent = "No camera devices detected.";
             alert("No camera device was detected on your computer or smartphone. You can manually enter or paste the Pass ID / QR code into the input field below.");
             return;
         }
 
-        // Camera select dropdown if multiple cameras exist (e.g. front & back on mobile)
-        if (devices.length > 1 && cameraDeviceSelect) {
-            cameraDeviceSelect.innerHTML = devices.map(d => `<option value="${d.id}">${escapeHtml(d.label || 'Camera ' + d.id)}</option>`).join("");
+        // Detect Back/Rear camera explicitly
+        let backCameraIndex = availableCameraDevices.findIndex(d => {
+            const lbl = (d.label || "").toLowerCase();
+            return (
+                lbl.includes("back") ||
+                lbl.includes("rear") ||
+                lbl.includes("environment") ||
+                lbl.includes("main") ||
+                lbl.includes("wide")
+            );
+        });
+
+        if (backCameraIndex === -1 && availableCameraDevices.length > 1) {
+            // If one camera says 'front' or 'user', choose the other camera
+            const nonFrontIndex = availableCameraDevices.findIndex(d => {
+                const lbl = (d.label || "").toLowerCase();
+                return !lbl.includes("front") && !lbl.includes("selfie") && !lbl.includes("user");
+            });
+            if (nonFrontIndex !== -1) backCameraIndex = nonFrontIndex;
+        }
+
+        // Camera select dropdown if multiple cameras exist
+        if (availableCameraDevices.length > 1 && cameraDeviceSelect) {
+            cameraDeviceSelect.innerHTML = availableCameraDevices.map((d, idx) => {
+                const isSelected = selectedCameraDeviceId ? d.id === selectedCameraDeviceId : idx === (backCameraIndex !== -1 ? backCameraIndex : 0);
+                const label = d.label ? d.label : (idx === backCameraIndex ? 'Rear / Back Camera' : 'Camera ' + (idx + 1));
+                return `<option value="${d.id}" ${isSelected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            }).join("");
             cameraDeviceSelect.classList.remove("hidden");
+
+            if (!selectedCameraDeviceId && backCameraIndex !== -1) {
+                cameraDeviceSelect.value = availableCameraDevices[backCameraIndex].id;
+                selectedCameraDeviceId = availableCameraDevices[backCameraIndex].id;
+                activeCameraIndex = backCameraIndex;
+            }
+
             cameraDeviceSelect.onchange = () => {
+                selectedCameraDeviceId = cameraDeviceSelect.value;
+                activeCameraIndex = availableCameraDevices.findIndex(d => d.id === selectedCameraDeviceId);
                 stopQrCamera().then(() => startQrCamera());
             };
         }
 
-        let cameraIdOrConfig = { facingMode: "environment" };
-        if (cameraDeviceSelect && cameraDeviceSelect.value) {
-            cameraIdOrConfig = cameraDeviceSelect.value;
+        // Camera configuration prioritization:
+        // 1. User selected device
+        // 2. Detected back camera device ID
+        // 3. FacingMode: environment (HTML5 standard rear camera constraint)
+        let activeCameraConfig;
+        if (selectedCameraDeviceId) {
+            activeCameraConfig = selectedCameraDeviceId;
+        } else if (backCameraIndex !== -1) {
+            activeCameraConfig = availableCameraDevices[backCameraIndex].id;
+            selectedCameraDeviceId = activeCameraConfig;
+            activeCameraIndex = backCameraIndex;
+        } else {
+            activeCameraConfig = { facingMode: currentFacingMode || "environment" };
         }
 
         const qrCodeSuccessCallback = async (decodedText) => {
@@ -628,20 +677,44 @@ async function startQrCamera() {
             aspectRatio: 1.0
         };
 
-        await html5QrScanner.start(
-            cameraIdOrConfig,
-            config,
-            qrCodeSuccessCallback,
-            () => {} // Frame without QR
-        );
+        try {
+            await html5QrScanner.start(
+                activeCameraConfig,
+                config,
+                qrCodeSuccessCallback,
+                () => {} // Frame without QR
+            );
+        } catch (camErr) {
+            console.warn("Back camera direct initialization failed, trying facingMode environment fallback:", camErr);
+            try {
+                await html5QrScanner.start(
+                    { facingMode: "environment" },
+                    config,
+                    qrCodeSuccessCallback,
+                    () => {}
+                );
+            } catch (fallbackErr) {
+                console.warn("Fallback to first available device:", fallbackErr);
+                if (availableCameraDevices.length > 0) {
+                    await html5QrScanner.start(
+                        availableCameraDevices[0].id,
+                        config,
+                        qrCodeSuccessCallback,
+                        () => {}
+                    );
+                } else {
+                    throw fallbackErr;
+                }
+            }
+        }
 
         isScanningActive = true;
-        if (cameraStatusText) cameraStatusText.textContent = "Camera Active: Point at attendee QR code pass";
+        if (cameraStatusText) cameraStatusText.textContent = "Camera Active: Point rear camera at attendee QR pass";
 
     } catch (err) {
         console.error("Camera startup error:", err);
         if (cameraStatusText) cameraStatusText.textContent = `Camera Error: ${err.message || 'Permission denied'}`;
-        alert(`Could not access camera: ${err.message || 'Permission denied'}. Please allow camera permissions in your browser.`);
+        alert(`Could not access camera: ${err.message || 'Permission denied'}. Please check camera permissions in your mobile browser settings.`);
         stopQrCamera();
     }
 }
@@ -1033,6 +1106,21 @@ if (btnToggleCamera) {
 if (btnCloseCamera) {
     btnCloseCamera.addEventListener("click", () => {
         stopQrCamera();
+    });
+}
+
+if (btnSwitchCamera) {
+    btnSwitchCamera.addEventListener("click", async () => {
+        if (availableCameraDevices.length > 1) {
+            activeCameraIndex = (activeCameraIndex + 1) % availableCameraDevices.length;
+            selectedCameraDeviceId = availableCameraDevices[activeCameraIndex].id;
+            if (cameraDeviceSelect) cameraDeviceSelect.value = selectedCameraDeviceId;
+        } else {
+            currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+            selectedCameraDeviceId = null;
+        }
+        await stopQrCamera();
+        await startQrCamera();
     });
 }
 
