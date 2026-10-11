@@ -192,6 +192,9 @@ db.exec(`
         mobile TEXT NOT NULL,
         razorpay_order_id TEXT UNIQUE,
         razorpay_payment_id TEXT UNIQUE,
+        utr_number TEXT,
+        payment_vpa TEXT,
+        payment_bank TEXT,
         payment_amount INTEGER,
         payment_currency TEXT,
         payment_method TEXT,
@@ -207,6 +210,9 @@ db.exec(`
 try { db.exec("ALTER TABLE registrations ADD COLUMN event_id INTEGER DEFAULT 1;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN checked_in INTEGER DEFAULT 0;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN checked_in_at TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE registrations ADD COLUMN utr_number TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE registrations ADD COLUMN payment_vpa TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE registrations ADD COLUMN payment_bank TEXT;"); } catch (e) {}
 try {
     db.exec("DROP INDEX IF EXISTS idx_registrations_college_id;");
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_event_college ON registrations(event_id, college_id);");
