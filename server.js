@@ -974,9 +974,8 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
         if (eventId) {
             studentQuery += " AND r.event_id = ?";
             params.push(parseInt(eventId, 10));
-        } else {
-            studentQuery += " ORDER BY r.checked_in ASC, r.id DESC";
         }
+        studentQuery += " ORDER BY r.checked_in ASC, r.id DESC";
 
         const student = db.prepare(studentQuery).get(...params);
 

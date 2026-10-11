@@ -5,7 +5,37 @@ let activeFilter = 'all';
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     loadEvents();
+    initMobileNav();
 });
+
+function initMobileNav() {
+    const toggleBtn = document.getElementById('navMobileToggle');
+    const navMenu = document.getElementById('navMenu');
+    if (!toggleBtn || !navMenu) return;
+
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = navMenu.classList.toggle('mobile-open');
+        toggleBtn.classList.toggle('active', isOpen);
+        toggleBtn.setAttribute('aria-expanded', String(isOpen));
+    });
+
+    document.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', () => {
+            navMenu.classList.remove('mobile-open');
+            toggleBtn.classList.remove('active');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        });
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!navMenu.contains(e.target) && !toggleBtn.contains(e.target)) {
+            navMenu.classList.remove('mobile-open');
+            toggleBtn.classList.remove('active');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+    });
+}
 
 // ========================================
 // EVENTS HUB & DYNAMIC CARDS

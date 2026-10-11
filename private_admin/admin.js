@@ -489,6 +489,12 @@ async function loadRegistrations() {
 let html5QrScanner = null;
 let isScanningActive = false;
 let isScanProcessing = false;
+let isGateVerifying = false;
+let lastAdmittedInfo = {
+    code: null,
+    studentId: null,
+    timestamp: 0
+};
 let audioCtx = null;
 
 // Sound Effects via Web Audio API (No external sound files required)
@@ -579,6 +585,18 @@ async function startQrCamera() {
 
         const qrCodeSuccessCallback = async (decodedText) => {
             if (isScanProcessing) return;
+
+            // If this exact pass was admitted within the last 15 seconds, ignore continuous camera frames
+            if (
+                lastAdmittedInfo.code === decodedText &&
+                (Date.now() - lastAdmittedInfo.timestamp) < 15000
+            ) {
+                if (cameraStatusText) {
+                    cameraStatusText.textContent = "Pass already admitted just now. Point at next attendee.";
+                }
+                return;
+            }
+
             isScanProcessing = true;
 
             gateInput.value = decodedText;
@@ -649,6 +667,12 @@ async function verifyPass(code, { preview = false } = {}) {
         return;
     }
 
+    if (isGateVerifying) return;
+    isGateVerifying = true;
+
+    if (gateVerifyBtn) gateVerifyBtn.disabled = true;
+    if (gatePreviewBtn) gatePreviewBtn.disabled = true;
+
     code = code.trim();
     const eventId = gateEventSelect ? gateEventSelect.value : "";
 
@@ -680,6 +704,15 @@ async function verifyPass(code, { preview = false } = {}) {
         const data = await response.json().catch(() => ({}));
 
         if (response.ok && data.success) {
+            // Record last admitted info
+            if (!data.isPreview && data.student) {
+                lastAdmittedInfo = {
+                    code,
+                    studentId: data.student.id,
+                    timestamp: Date.now()
+                };
+            }
+
             // SUCCESSFUL PASS
             renderGateResult({
                 statusType: data.isPreview ? 'preview' : 'valid',
@@ -693,15 +726,32 @@ async function verifyPass(code, { preview = false } = {}) {
         } else {
             // HANDLE ERROR OR REUSE
             if (response.status === 409 || data.isReused || data.alreadyCheckedIn) {
-                // REUSED PASS (DUPLICATE ENTRY DETECTED)
-                renderGateResult({
-                    statusType: 'reused',
-                    messageTitle: '⚠️ REUSED PASS! ALREADY ADMITTED',
-                    messageDesc: data.message || `This pass was already scanned and admitted at ${data.student?.checkedInAt || 'earlier today'}. Entry Forbidden!`,
-                    student: data.student,
-                    code
-                });
-                playScanSound('warning');
+                const wasJustAdmitted = (
+                    (lastAdmittedInfo.studentId && lastAdmittedInfo.studentId === data.student?.id) ||
+                    (lastAdmittedInfo.code && lastAdmittedInfo.code === code && (Date.now() - lastAdmittedInfo.timestamp) < 45000)
+                );
+
+                if (wasJustAdmitted) {
+                    // This pass was just admitted moments ago at this terminal
+                    renderGateResult({
+                        statusType: 'valid',
+                        messageTitle: '✅ ADMITTED JUST NOW (CONFIRMED)',
+                        messageDesc: `Student was checked in moments ago at ${data.student?.checkedInAt || 'this terminal'}. Entry is Approved!`,
+                        student: data.student,
+                        code
+                    });
+                    playScanSound('success');
+                } else {
+                    // Genuine reused pass
+                    renderGateResult({
+                        statusType: 'reused',
+                        messageTitle: '⚠️ REUSED PASS! ALREADY ADMITTED',
+                        messageDesc: data.message || `This pass was already scanned and admitted at ${data.student?.checkedInAt || 'earlier today'}. Entry Forbidden!`,
+                        student: data.student,
+                        code
+                    });
+                    playScanSound('warning');
+                }
             } else if (response.status === 400 && (data.isUnpaid || data.student)) {
                 // UNPAID PASS
                 renderGateResult({
@@ -735,6 +785,10 @@ async function verifyPass(code, { preview = false } = {}) {
             code
         });
         playScanSound('error');
+    } finally {
+        isGateVerifying = false;
+        if (gateVerifyBtn) gateVerifyBtn.disabled = false;
+        if (gatePreviewBtn) gatePreviewBtn.disabled = false;
     }
 }
 
