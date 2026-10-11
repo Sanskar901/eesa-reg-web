@@ -12,6 +12,9 @@ require("dotenv").config();
 
 const app = express();
 
+// Trust reverse proxy (Essential for Render / HTTPS load balancers)
+app.set("trust proxy", 1);
+
 // Security Headers Middleware
 app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -22,16 +25,89 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "100kb" }));
 
+// ========================================
+// DATABASE INITIALIZATION & OPTIMIZATIONS
+// ========================================
+
+const DB_PATH = process.env.DB_PATH
+    ? path.resolve(process.env.DB_PATH)
+    : path.join(__dirname, "eesa.db");
+
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const db = new Database(DB_PATH);
+
+// Enable WAL mode & timeout for high-concurrency reliability
+db.pragma("journal_mode = WAL");
+db.pragma("busy_timeout = 5000");
+
+// ========================================
+// PERSISTENT SQLITE SESSION STORE
+// ========================================
+
+class SQLiteSessionStore extends session.Store {
+    constructor() {
+        super();
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS sessions (
+                sid TEXT PRIMARY KEY,
+                sess TEXT NOT NULL,
+                expired INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
+        `);
+    }
+
+    get(sid, callback) {
+        try {
+            const row = db.prepare("SELECT sess FROM sessions WHERE sid = ? AND expired > ?").get(sid, Date.now());
+            if (!row) return callback(null, null);
+            callback(null, JSON.parse(row.sess));
+        } catch (err) {
+            callback(err);
+        }
+    }
+
+    set(sid, sess, callback) {
+        try {
+            const maxAge = (sess.cookie && sess.cookie.maxAge) || (7 * 24 * 60 * 60 * 1000);
+            const expired = Date.now() + maxAge;
+            db.prepare(`
+                INSERT INTO sessions (sid, sess, expired)
+                VALUES (?, ?, ?)
+                ON CONFLICT(sid) DO UPDATE SET sess = excluded.sess, expired = excluded.expired
+            `).run(sid, JSON.stringify(sess), expired);
+            if (callback) callback(null);
+        } catch (err) {
+            if (callback) callback(err);
+        }
+    }
+
+    destroy(sid, callback) {
+        try {
+            db.prepare("DELETE FROM sessions WHERE sid = ?").run(sid);
+            if (callback) callback(null);
+        } catch (err) {
+            if (callback) callback(err);
+        }
+    }
+}
+
 app.use(session({
     name: "eesa_admin_session",
     secret: process.env.SESSION_SECRET || "eesa_super_secret_session_key",
+    store: new SQLiteSessionStore(),
     resave: false,
     saveUninitialized: false,
+    proxy: true,
     cookie: {
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 60 * 60 * 1000 // 1 hour session
+        secure: "auto", // Works on both HTTP (localhost) and HTTPS (Render proxy)
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7-day session persistence
     }
 }));
 
@@ -68,25 +144,6 @@ app.get(["/eesa-admin.js", `${ADMIN_PATH}/admin.js`], (req, res) => {
     res.setHeader("Content-Type", "application/javascript");
     res.sendFile(path.join(__dirname, "private_admin", "admin.js"));
 });
-
-// ========================================
-// DATABASE INITIALIZATION & OPTIMIZATIONS
-// ========================================
-
-const DB_PATH = process.env.DB_PATH
-    ? path.resolve(process.env.DB_PATH)
-    : path.join(__dirname, "eesa.db");
-
-const dbDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-}
-
-const db = new Database(DB_PATH);
-
-// Enable WAL mode & timeout for high-concurrency reliability
-db.pragma("journal_mode = WAL");
-db.pragma("busy_timeout = 5000");
 
 // 1. Events Table
 db.exec(`
