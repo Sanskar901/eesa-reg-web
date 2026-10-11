@@ -58,11 +58,13 @@ app.get([ADMIN_PATH, ADMIN_PATH + "/"], (req, res) => {
     res.sendFile(path.join(__dirname, "private_admin", "admin.html"));
 });
 
-app.get(`${ADMIN_PATH}/admin.css`, (req, res) => {
+app.get(["/eesa-admin.css", `${ADMIN_PATH}/admin.css`], (req, res) => {
+    res.setHeader("Content-Type", "text/css");
     res.sendFile(path.join(__dirname, "private_admin", "admin.css"));
 });
 
-app.get(`${ADMIN_PATH}/admin.js`, (req, res) => {
+app.get(["/eesa-admin.js", `${ADMIN_PATH}/admin.js`], (req, res) => {
+    res.setHeader("Content-Type", "application/javascript");
     res.sendFile(path.join(__dirname, "private_admin", "admin.js"));
 });
 
