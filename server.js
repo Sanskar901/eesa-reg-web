@@ -92,9 +92,16 @@ const DB_PATH = process.env.DB_PATH
     ? path.resolve(process.env.DB_PATH)
     : path.join(__dirname, "eesa.db");
 
-const dbDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+let effectiveDbPath = DB_PATH;
+try {
+    const dbDir = path.dirname(effectiveDbPath);
+    if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+    }
+} catch (dirErr) {
+    console.error(`⚠️ Could not create directory for DB_PATH (${effectiveDbPath}):`, dirErr.message);
+    console.warn("⚠️ Falling back to local eesa.db in project root.");
+    effectiveDbPath = path.join(__dirname, "eesa.db");
 }
 
 if (process.env.RENDER && !process.env.DB_PATH) {
@@ -103,7 +110,14 @@ if (process.env.RENDER && !process.env.DB_PATH) {
     console.warn("\x1b[33m%s\x1b[0m", "👉 Attach a 1GB Persistent Disk at /var/data and set DB_PATH=/var/data/eesa.db in Render Environment Variables.");
 }
 
-const db = new Database(DB_PATH);
+let db;
+try {
+    db = new Database(effectiveDbPath);
+} catch (dbErr) {
+    console.error(`⚠️ Failed to open database at ${effectiveDbPath}:`, dbErr.message);
+    effectiveDbPath = path.join(__dirname, "eesa.db");
+    db = new Database(effectiveDbPath);
+}
 
 // Enable WAL mode & timeout for high-concurrency reliability
 db.pragma("journal_mode = WAL");
@@ -2645,8 +2659,13 @@ app.use((err, req, res, next) => {
     res.status(500).json({ success: false, message: "Internal server error occurred." });
 });
 
+// Health check endpoint for Render / cloud monitoring
+app.get("/health", (req, res) => {
+    res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
+});
+
 // Start server
-app.listen(PORT, () => {
-    console.log(`EESA Website running at http://localhost:${PORT}`);
-    console.log(`Admin Portal accessible at http://localhost:${PORT}${ADMIN_PATH}`);
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`EESA Website running at http://0.0.0.0:${PORT}`);
+    console.log(`Admin Portal accessible at http://0.0.0.0:${PORT}${ADMIN_PATH}`);
 });
