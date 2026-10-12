@@ -92,34 +92,16 @@ const DB_PATH = process.env.DB_PATH
     ? path.resolve(process.env.DB_PATH)
     : path.join(__dirname, "eesa.db");
 
-let effectiveDbPath = DB_PATH;
-try {
-    const dbDir = path.dirname(effectiveDbPath);
-    if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
-    }
-} catch (dirErr) {
-    console.error(`⚠️ Could not create directory for DB_PATH (${effectiveDbPath}):`, dirErr.message);
-    console.warn("⚠️ Falling back to local eesa.db in project root.");
-    effectiveDbPath = path.join(__dirname, "eesa.db");
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
 }
 
-let db;
-try {
-    db = new Database(effectiveDbPath);
-} catch (dbErr) {
-    console.error(`⚠️ Failed to open database at ${effectiveDbPath}:`, dbErr.message);
-    effectiveDbPath = path.join(__dirname, "eesa.db");
-    db = new Database(effectiveDbPath);
-}
+const db = new Database(DB_PATH);
 
-// Container-safe journal mode (avoids shared memory mmap segfault on Linux cloud environments)
-try {
-    db.pragma("journal_mode = DELETE");
-    db.pragma("busy_timeout = 5000");
-} catch (e) {
-    console.warn("Database pragma notice:", e.message);
-}
+// Enable WAL mode & timeout for high-concurrency reliability
+db.pragma("journal_mode = WAL");
+db.pragma("busy_timeout = 5000");
 
 // ========================================
 // PERSISTENT SQLITE SESSION STORE
@@ -2657,13 +2639,8 @@ app.use((err, req, res, next) => {
     res.status(500).json({ success: false, message: "Internal server error occurred." });
 });
 
-// Health check endpoint for Render / cloud monitoring
-app.get("/health", (req, res) => {
-    res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
-});
-
 // Start server
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`EESA Website running at http://0.0.0.0:${PORT}`);
-    console.log(`Admin Portal accessible at http://0.0.0.0:${PORT}${ADMIN_PATH}`);
+app.listen(PORT, () => {
+    console.log(`EESA Website running at http://localhost:${PORT}`);
+    console.log(`Admin Portal accessible at http://localhost:${PORT}${ADMIN_PATH}`);
 });

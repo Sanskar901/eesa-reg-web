@@ -1,14 +1,10 @@
 {
-  "name": "eesa-reg-web",
+  "name": "coding",
   "version": "1.0.0",
-  "description": "EESA Event Registration Portal",
-  "main": "server.js",
-  "engines": {
-    "node": ">=20.0.0"
-  },
+  "description": "",
+  "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "build": "npm install",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
