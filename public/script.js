@@ -282,6 +282,7 @@ eventRegistrationForm.addEventListener('submit', async function (e) {
                 checkedIn: false
             });
             eventRegistrationForm.reset();
+            regSubmitBtn.disabled = false;
             return;
         }
 

@@ -24,7 +24,65 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({
+    limit: "100kb",
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+
+// ========================================
+// RATE LIMITING UTILITIES
+// ========================================
+
+function createRateLimiter({ windowMs = 15 * 60 * 1000, maxRequests = 20, message = "Too many requests. Please try again later." } = {}) {
+    const clients = new Map();
+
+    setInterval(() => {
+        const now = Date.now();
+        for (const [ip, entry] of clients.entries()) {
+            if (now > entry.resetTime) {
+                clients.delete(ip);
+            }
+        }
+    }, 5 * 60 * 1000).unref();
+
+    return (req, res, next) => {
+        const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+        const now = Date.now();
+        const entry = clients.get(ip);
+
+        if (!entry || now > entry.resetTime) {
+            clients.set(ip, { count: 1, resetTime: now + windowMs });
+            return next();
+        }
+
+        entry.count += 1;
+        if (entry.count > maxRequests) {
+            const retryAfterSec = Math.max(1, Math.ceil((entry.resetTime - now) / 1000));
+            res.setHeader("Retry-After", retryAfterSec);
+            return res.status(429).json({
+                error: message,
+                message: message,
+                retryAfter: retryAfterSec
+            });
+        }
+
+        next();
+    };
+}
+
+const createOrderLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    maxRequests: 25,
+    message: "Too many registration attempts. Please wait a few minutes before trying again."
+});
+
+const findPassLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    maxRequests: 30,
+    message: "Too many pass lookup attempts. Please wait a few minutes before trying again."
+});
 
 // ========================================
 // DATABASE INITIALIZATION & OPTIMIZATIONS
@@ -37,6 +95,12 @@ const DB_PATH = process.env.DB_PATH
 const dbDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
+}
+
+if (process.env.RENDER && !process.env.DB_PATH) {
+    console.warn("\x1b[33m%s\x1b[0m", "⚠️ [DEPLOYMENT WARNING] Running on Render without DB_PATH!");
+    console.warn("\x1b[33m%s\x1b[0m", "⚠️ Render filesystem is EPHEMERAL: database will be WIPED on every deploy or restart!");
+    console.warn("\x1b[33m%s\x1b[0m", "👉 Attach a 1GB Persistent Disk at /var/data and set DB_PATH=/var/data/eesa.db in Render Environment Variables.");
 }
 
 const db = new Database(DB_PATH);
@@ -852,13 +916,30 @@ app.post("/api/volunteer/verify-entry", requireVolunteer, (req, res) => {
         const checkInTime = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
         const volunteerName = req.session.volunteerName || (req.session.isAdmin ? "Admin" : "Volunteer");
 
-        db.prepare(`
+        const updateResult = db.prepare(`
             UPDATE registrations
             SET checked_in = 1,
                 checked_in_at = ?,
                 checked_in_by = ?
-            WHERE id = ?
+            WHERE id = ? AND checked_in = 0
         `).run(checkInTime, volunteerName, student.id);
+
+        if (updateResult.changes === 0) {
+            // Caught simultaneous scan race condition between two gates
+            const freshRecord = db.prepare("SELECT * FROM registrations WHERE id = ?").get(student.id);
+            return res.status(409).json({
+                success: false,
+                alreadyCheckedIn: true,
+                isReused: true,
+                message: `PASS ALREADY ADMITTED! Just admitted at ${freshRecord?.checked_in_at || checkInTime}${freshRecord?.checked_in_by ? ' by ' + freshRecord.checked_in_by : ' at another gate'}.`,
+                student: {
+                    ...studentDetails,
+                    checkedIn: true,
+                    checkedInAt: freshRecord?.checked_in_at || checkInTime,
+                    checkedInBy: freshRecord?.checked_in_by || volunteerName
+                }
+            });
+        }
 
         studentDetails.checkedIn = true;
         studentDetails.checkedInAt = checkInTime;
@@ -1582,16 +1663,33 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
         }
 
         const checkInTime = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-        db.prepare(`
+        const updateResult = db.prepare(`
             UPDATE registrations
             SET checked_in = 1,
                 checked_in_at = ?,
                 checked_in_by = 'Administrator'
-            WHERE id = ?
+            WHERE id = ? AND checked_in = 0
         `).run(checkInTime, student.id);
+
+        if (updateResult.changes === 0) {
+            const freshRecord = db.prepare("SELECT * FROM registrations WHERE id = ?").get(student.id);
+            return res.status(409).json({
+                success: false,
+                alreadyCheckedIn: true,
+                isReused: true,
+                message: `PASS REUSED! This pass was ALREADY admitted at ${freshRecord?.checked_in_at || checkInTime}${freshRecord?.checked_in_by ? ' by ' + freshRecord.checked_in_by : ' at another gate'}.`,
+                student: {
+                    ...studentDetails,
+                    checkedIn: true,
+                    checkedInAt: freshRecord?.checked_in_at || checkInTime,
+                    checkedInBy: freshRecord?.checked_in_by || "Administrator"
+                }
+            });
+        }
 
         studentDetails.checkedIn = true;
         studentDetails.checkedInAt = checkInTime;
+        studentDetails.checkedInBy = "Administrator";
 
         res.json({
             success: true,
@@ -1942,7 +2040,7 @@ app.get("/api/admin/export-payments", requireAdmin, (req, res) => {
 // ========================================
 
 // STEP 1: Register student for a specific event
-app.post("/api/create-order", async (req, res) => {
+app.post("/api/create-order", createOrderLimiter, async (req, res) => {
     try {
         const {
             eventId,
@@ -2037,14 +2135,27 @@ app.post("/api/create-order", async (req, res) => {
             if (existingRegistration) {
                 db.prepare(`
                     UPDATE registrations
-                    SET registration_id = ?,
+                    SET name = ?,
+                        department = ?,
+                        academic_year = ?,
+                        mobile = ?,
+                        registration_id = ?,
                         qr_number = ?,
                         qr_token = ?,
                         payment_status = 'paid',
                         payment_amount = 0,
                         paid_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                `).run(registrationId, qrNumber, qrToken, existingRegistration.id);
+                `).run(
+                    name.trim(),
+                    department.trim(),
+                    year.trim(),
+                    mobile.trim(),
+                    registrationId,
+                    qrNumber,
+                    qrToken,
+                    existingRegistration.id
+                );
             } else {
                 db.prepare(`
                     INSERT INTO registrations (
@@ -2267,7 +2378,7 @@ app.post("/api/verify-payment", async (req, res) => {
         const paymentVpa = payment.vpa || "";
         const paymentBank = payment.bank || payment.wallet || "";
 
-        db.prepare(`
+        const updateResult = db.prepare(`
             UPDATE registrations
             SET registration_id = ?,
                 qr_number = ?,
@@ -2280,7 +2391,7 @@ app.post("/api/verify-payment", async (req, res) => {
                 payment_bank = ?,
                 payment_status = 'paid',
                 paid_at = CURRENT_TIMESTAMP
-            WHERE razorpay_order_id = ?
+            WHERE razorpay_order_id = ? AND payment_status != 'paid'
         `).run(
             registrationId,
             qrNumber,
@@ -2293,6 +2404,37 @@ app.post("/api/verify-payment", async (req, res) => {
             paymentBank,
             razorpay_order_id
         );
+
+        if (updateResult.changes === 0) {
+            // Already paid by a parallel request or server-to-server webhook
+            const fresh = db.prepare(`
+                SELECT r.*, e.title AS event_title
+                FROM registrations r
+                LEFT JOIN events e ON e.id = r.event_id
+                WHERE r.razorpay_order_id = ?
+            `).get(razorpay_order_id);
+
+            if (fresh && fresh.payment_status === "paid") {
+                const freshQrData = JSON.stringify({
+                    eventId: fresh.event_id,
+                    registrationId: fresh.registration_id,
+                    qrNumber: fresh.qr_number,
+                    token: fresh.qr_token
+                });
+                return res.json({
+                    success: true,
+                    registrationId: fresh.registration_id,
+                    qrNumber: fresh.qr_number,
+                    qrImage: await QRCode.toDataURL(freshQrData),
+                    eventTitle: fresh.event_title || registration.event_title,
+                    name: fresh.name,
+                    collegeId: fresh.college_id,
+                    department: fresh.department,
+                    academicYear: fresh.academic_year,
+                    message: `Payment confirmed for "${fresh.event_title || registration.event_title}"! Entry pass is generated.`
+                });
+            }
+        }
 
         res.json({
             success: true,
@@ -2314,10 +2456,110 @@ app.post("/api/verify-payment", async (req, res) => {
 });
 
 // ========================================
+// RAZORPAY SERVER-TO-SERVER WEBHOOK HANDLER
+// ========================================
+// Handles scenarios where bank captured money but user closed browser or network dropped before /api/verify-payment
+app.post("/api/razorpay-webhook", async (req, res) => {
+    try {
+        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET;
+        const signature = req.headers["x-razorpay-signature"];
+
+        if (!signature || !webhookSecret) {
+            console.warn("⚠️ Razorpay webhook call rejected: Missing signature header or webhook secret.");
+            return res.status(400).json({ error: "Missing webhook signature or secret" });
+        }
+
+        const rawPayload = req.rawBody ? req.rawBody.toString("utf8") : JSON.stringify(req.body);
+        const expectedSignature = crypto
+            .createHmac("sha256", webhookSecret)
+            .update(rawPayload)
+            .digest("hex");
+
+        let signatureValid = false;
+        try {
+            signatureValid = crypto.timingSafeEqual(
+                Buffer.from(signature, "utf8"),
+                Buffer.from(expectedSignature, "utf8")
+            );
+        } catch (e) {
+            signatureValid = false;
+        }
+
+        if (!signatureValid) {
+            console.warn("⚠️ Razorpay webhook rejected: Invalid HMAC signature.");
+            return res.status(400).json({ error: "Invalid webhook signature" });
+        }
+
+        const event = req.body?.event;
+        const payload = req.body?.payload;
+
+        if (event === "payment.captured" || event === "order.paid") {
+            const paymentEntity = payload?.payment?.entity;
+            const orderEntity = payload?.order?.entity;
+            const orderId = paymentEntity?.order_id || orderEntity?.id;
+
+            if (orderId) {
+                const reg = db.prepare("SELECT * FROM registrations WHERE razorpay_order_id = ?").get(orderId);
+                if (reg && reg.payment_status !== "paid") {
+                    const registrationId = "EESA-" + crypto.randomUUID().slice(0, 8).toUpperCase();
+                    const qrNumber = "QR-" + crypto.randomUUID().toUpperCase();
+                    const qrToken = crypto.randomBytes(32).toString("hex");
+
+                    const utrNumber = (
+                        paymentEntity?.acquirer_data?.rrn ||
+                        paymentEntity?.acquirer_data?.upi_transaction_id ||
+                        paymentEntity?.acquirer_data?.bank_transaction_no ||
+                        paymentEntity?.acquirer_data?.auth_code ||
+                        paymentEntity?.acquirer_data?.arn ||
+                        "N/A"
+                    );
+
+                    const updateResult = db.prepare(`
+                        UPDATE registrations
+                        SET registration_id = ?,
+                            qr_number = ?,
+                            qr_token = ?,
+                            razorpay_payment_id = ?,
+                            payment_currency = ?,
+                            payment_method = ?,
+                            utr_number = ?,
+                            payment_vpa = ?,
+                            payment_bank = ?,
+                            payment_status = 'paid',
+                            paid_at = CURRENT_TIMESTAMP
+                        WHERE razorpay_order_id = ? AND payment_status != 'paid'
+                    `).run(
+                        registrationId,
+                        qrNumber,
+                        qrToken,
+                        paymentEntity?.id || "webhook_captured",
+                        paymentEntity?.currency || "INR",
+                        paymentEntity?.method || "online",
+                        utrNumber,
+                        paymentEntity?.vpa || "",
+                        paymentEntity?.bank || paymentEntity?.wallet || "",
+                        orderId
+                    );
+
+                    if (updateResult.changes > 0) {
+                        console.log(`✅ [WEBHOOK] Successfully confirmed pass for order ${orderId} (${reg.name}, ${registrationId})`);
+                    }
+                }
+            }
+        }
+
+        return res.status(200).json({ status: "ok" });
+    } catch (err) {
+        console.error("Razorpay webhook processing error:", err);
+        return res.status(500).json({ error: "Internal webhook processing error" });
+    }
+});
+
+// ========================================
 // FIND / RETRIEVE EXISTING PASSES
 // ========================================
 
-app.post("/api/find-pass", async (req, res) => {
+app.post("/api/find-pass", findPassLimiter, async (req, res) => {
     try {
         const { collegeId, mobile, eventId } = req.body || {};
 

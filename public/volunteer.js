@@ -346,7 +346,11 @@
             isCameraActive = false;
             if (laserLine) laserLine.classList.add("hidden");
             if (cameraStatusText) {
-                cameraStatusText.textContent = "Camera access restricted. Use manual ID search below.";
+                if (location.protocol !== "https:" && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+                    cameraStatusText.innerHTML = "⚠️ <strong>HTTPS Required:</strong> Mobile browsers block camera on HTTP. Please open using <code>https://</code> or use manual ID entry below.";
+                } else {
+                    cameraStatusText.textContent = "Camera access denied or unavailable. Use manual ID search below.";
+                }
             }
         }
     }
