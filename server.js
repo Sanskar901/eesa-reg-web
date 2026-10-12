@@ -516,9 +516,10 @@ function verifyPassword(password, storedHash) {
 }
 
 function requireVolunteer(req, res, next) {
-    if (!req.session || (!req.session.isVolunteer && !req.session.isAdmin)) {
+    if (!req.session || req.session.isVolunteer !== true) {
         return res.status(401).json({
             success: false,
+            authenticated: false,
             message: "Volunteer sign in required."
         });
     }
@@ -625,36 +626,54 @@ app.post("/api/volunteer/login", (req, res, next) => {
 });
 
 // Volunteer Auth Check
-app.get("/api/volunteer/me", requireVolunteer, (req, res) => {
+app.get("/api/volunteer/me", (req, res) => {
+    if (!req.session || req.session.isVolunteer !== true) {
+        return res.json({
+            success: true,
+            authenticated: false
+        });
+    }
+
     let eventTitle = null;
     if (req.session.volunteerAssignedEvent) {
         const ev = db.prepare("SELECT title FROM events WHERE id = ?").get(req.session.volunteerAssignedEvent);
         if (ev) eventTitle = ev.title;
     }
+
     res.json({
         success: true,
         authenticated: true,
         volunteer: {
             id: req.session.volunteerId,
-            name: req.session.volunteerName || (req.session.isAdmin ? "Administrator" : "Volunteer"),
-            username: req.session.volunteerUsername || "admin",
+            name: req.session.volunteerName || "Volunteer",
+            username: req.session.volunteerUsername || "volunteer",
             assignedEventId: req.session.volunteerAssignedEvent || null,
-            assignedEventTitle: eventTitle,
-            isAdmin: req.session.isAdmin === true
+            assignedEventTitle: eventTitle
         }
     });
 });
 
 // Volunteer Sign Out
-app.post("/api/volunteer/logout", requireVolunteer, (req, res, next) => {
-    req.session.destroy((err) => {
-        if (err) return next(err);
-        res.clearCookie("eesa_admin_session");
+app.post("/api/volunteer/logout", (req, res) => {
+    if (req.session) {
+        req.session.isVolunteer = false;
+        delete req.session.isVolunteer;
+        delete req.session.volunteerId;
+        delete req.session.volunteerUsername;
+        delete req.session.volunteerName;
+        delete req.session.volunteerAssignedEvent;
+        req.session.save(() => {
+            res.json({
+                success: true,
+                message: "Logged out successfully."
+            });
+        });
+    } else {
         res.json({
             success: true,
             message: "Logged out successfully."
         });
-    });
+    }
 });
 
 // Volunteer Events List
