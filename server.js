@@ -104,12 +104,6 @@ try {
     effectiveDbPath = path.join(__dirname, "eesa.db");
 }
 
-if (process.env.RENDER && !process.env.DB_PATH) {
-    console.warn("\x1b[33m%s\x1b[0m", "⚠️ [DEPLOYMENT WARNING] Running on Render without DB_PATH!");
-    console.warn("\x1b[33m%s\x1b[0m", "⚠️ Render filesystem is EPHEMERAL: database will be WIPED on every deploy or restart!");
-    console.warn("\x1b[33m%s\x1b[0m", "👉 Attach a 1GB Persistent Disk at /var/data and set DB_PATH=/var/data/eesa.db in Render Environment Variables.");
-}
-
 let db;
 try {
     db = new Database(effectiveDbPath);
@@ -119,9 +113,13 @@ try {
     db = new Database(effectiveDbPath);
 }
 
-// Enable WAL mode & timeout for high-concurrency reliability
-db.pragma("journal_mode = WAL");
-db.pragma("busy_timeout = 5000");
+// Container-safe journal mode (avoids shared memory mmap segfault on Linux cloud environments)
+try {
+    db.pragma("journal_mode = DELETE");
+    db.pragma("busy_timeout = 5000");
+} catch (e) {
+    console.warn("Database pragma notice:", e.message);
+}
 
 // ========================================
 // PERSISTENT SQLITE SESSION STORE
