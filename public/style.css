@@ -863,59 +863,6 @@ textarea:focus {
 }
 
 /* ==========================================================================
-   COMMITTEE ROSTER
-   ========================================================================== */
-.committee-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 20px;
-}
-
-.member-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-lg);
-    padding: 24px 20px;
-    text-align: center;
-    transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.member-card.highlight {
-    border-color: var(--red);
-    background: #181418;
-}
-
-.member-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--blue);
-}
-
-.member-avatar {
-    font-size: 38px;
-    margin-bottom: 12px;
-}
-
-.member-card h4 {
-    font-size: 16px;
-    font-weight: 700;
-    margin-bottom: 4px;
-    color: var(--white);
-}
-
-.member-role {
-    font-size: 12px;
-    color: var(--red-light);
-    font-weight: 700;
-    display: block;
-    margin-bottom: 6px;
-}
-
-.member-dept {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
-/* ==========================================================================
    REGISTRATION MODAL
    ========================================================================== */
 .modal-overlay {
@@ -1586,7 +1533,6 @@ textarea:focus {
     .works-section,
     .events-section,
     .passes-section,
-    .committee-section,
     #eventDetailsModal,
     #registrationModal,
     .modal-close-btn,
