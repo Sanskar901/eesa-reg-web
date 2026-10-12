@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>EESA Gate Pass Scanner — Volunteer Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/volunteer.css">
+</head>
+
+<body>
+    <div class="volunteer-app-container">
+
+        <!-- ==========================================
+             VOLUNTEER SIGN IN SECTION
+             ========================================== -->
+        <main id="loginSection" class="volunteer-login-wrapper">
+            <div class="login-card">
+                <div class="login-header">
+                    <img src="/1000362016.png" alt="JSPM University Logo" class="brand-logo-img">
+                    <div class="badge-tag">VOLUNTEER GATE PORTAL</div>
+                    <h1>Gate Pass Verification</h1>
+                    <p class="login-subtitle">
+                        Authenticate with your volunteer staff credentials to verify and admit attendees at the entry gate.
+                    </p>
+                </div>
+
+                <form id="volunteerLoginForm" class="login-form" autocomplete="off">
+                    <div class="form-group">
+                        <label for="volunteerUsername">Volunteer Username</label>
+                        <div class="input-with-icon">
+                            <span class="field-icon">👤</span>
+                            <input
+                                type="text"
+                                id="volunteerUsername"
+                                name="username"
+                                placeholder="e.g. rahul_gate1"
+                                required
+                                autocomplete="username"
+                                autocorrect="off"
+                                autocapitalize="none"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="volunteerPassword">Password</label>
+                        <div class="input-with-icon">
+                            <span class="field-icon">🔒</span>
+                            <input
+                                type="password"
+                                id="volunteerPassword"
+                                name="password"
+                                placeholder="Enter your access password"
+                                required
+                                autocomplete="current-password"
+                            >
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btnVolunteerLogin" class="btn-primary-action">
+                        <span>Sign In to Gate Scanner</span>
+                        <span class="btn-arrow">&rarr;</span>
+                    </button>
+                </form>
+
+                <div id="loginFeedback" class="feedback-banner hidden" role="alert"></div>
+
+                <div class="login-footer-info">
+                    <p>🔒 Dedicated Gate Scanner Access • JSPM EESA Event Committee</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- ==========================================
+             VOLUNTEER SCANNER INTERFACE (AUTHENTICATED)
+             ========================================== -->
+        <div id="scannerSection" class="volunteer-scanner-wrapper hidden">
+            <!-- Top Navbar -->
+            <header class="volunteer-header">
+                <div class="header-brand">
+                    <img src="/1000362016.png" alt="Logo" class="header-logo">
+                    <div class="header-titles">
+                        <h2>EESA Gate Scanner</h2>
+                        <div class="volunteer-badge-pill" id="volunteerIdentityBadge">
+                            <span class="live-dot"></span>
+                            <span id="headerVolunteerName">Volunteer Staff</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <button type="button" id="btnLogoutVolunteer" class="btn-logout" title="Sign Out">
+                        Sign Out
+                    </button>
+                </div>
+            </header>
+
+            <!-- Event & Gate Status Strip -->
+            <div class="gate-strip">
+                <div class="gate-event-selector-box">
+                    <label for="activeEventSelect">Active Gate Event:</label>
+                    <select id="activeEventSelect" class="gate-event-dropdown">
+                        <option value="">All Events (Auto-Detect)</option>
+                    </select>
+                </div>
+
+                <div class="gate-stats-pill" id="gateStatsPill">
+                    <span class="stats-label">Gate Admitted:</span>
+                    <strong class="stats-count" id="gateAdmittedCount">0</strong>
+                    <span class="stats-divider">/</span>
+                    <span class="stats-total" id="gatePaidCount">0 Total</span>
+                    <button type="button" id="btnRefreshStats" class="btn-stats-refresh" title="Refresh Live Counts">🔄</button>
+                </div>
+            </div>
+
+            <!-- Main Scanner Core -->
+            <main class="scanner-main-content">
+                <!-- Camera Viewport Card -->
+                <div class="camera-card">
+                    <div class="camera-toolbar">
+                        <div class="camera-status">
+                            <span class="status-indicator-dot"></span>
+                            <span id="cameraStatusText">Camera Active: Align attendee QR code</span>
+                        </div>
+                        <div class="camera-controls">
+                            <button type="button" id="btnFlipCamera" class="btn-cam-control" title="Flip between front and rear camera">
+                                🔄 Flip
+                            </button>
+                            <button type="button" id="btnToggleCameraPower" class="btn-cam-control" title="Pause or Resume Camera">
+                                ⏸️ Pause
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="viewfinder-wrapper">
+                        <div id="qrReader" class="qr-viewport"></div>
+                        <div class="laser-scanner-line" id="laserLine"></div>
+                        <div class="viewfinder-corners">
+                            <span class="corner top-left"></span>
+                            <span class="corner top-right"></span>
+                            <span class="corner bottom-left"></span>
+                            <span class="corner bottom-right"></span>
+                        </div>
+                    </div>
+
+                    <div class="scanner-help-tip">
+                        💡 Hold pass steady within frame. Works instantly on phone screens and printed tickets.
+                    </div>
+                </div>
+
+                <!-- Manual Lookup & Controls Form -->
+                <div class="lookup-card">
+                    <div class="gate-toggles-row">
+                        <label class="toggle-checkbox-label">
+                            <input type="checkbox" id="autoAdmitToggle" checked>
+                            <span class="toggle-text">⚡ <strong>Auto-Admit on Scan</strong></span>
+                        </label>
+                        <label class="toggle-checkbox-label">
+                            <input type="checkbox" id="soundToggle" checked>
+                            <span class="toggle-text">🔊 Sound Chime</span>
+                        </label>
+                    </div>
+
+                    <form id="manualVerifyForm" class="manual-form">
+                        <div class="search-input-wrapper">
+                            <input
+                                type="text"
+                                id="manualPassInput"
+                                placeholder="Scan QR or enter Pass ID (EESA-...), PRN..."
+                                autocomplete="off"
+                                required
+                            >
+                            <button type="button" id="btnClearInput" class="btn-clear-input hidden" title="Clear">✕</button>
+                        </div>
+
+                        <div class="action-buttons-row">
+                            <button type="submit" id="btnVerifyAdmit" class="btn-admit-action">
+                                Verify &amp; Admit
+                            </button>
+                            <button type="button" id="btnPreviewCheck" class="btn-preview-action">
+                                Preview Only
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Verification Result Banner & Details -->
+                <div id="verificationResultCard" class="result-card hidden" role="region" aria-live="polite">
+                    <div id="resultBanner" class="result-banner valid">
+                        <div class="result-badge-row">
+                            <span id="resultBadge" class="status-badge">ENTRY APPROVED</span>
+                            <span id="resultTimestamp" class="timestamp-badge"></span>
+                        </div>
+                        <h3 id="resultTitle">PASS VALID &amp; ENTRY APPROVED</h3>
+                        <p id="resultSubtitle">Attendee admitted successfully</p>
+                    </div>
+
+                    <div id="studentDetailsGrid" class="student-details-grid">
+                        <!-- Populated dynamically -->
+                    </div>
+
+                    <div id="resultActionRow" class="result-actions-row">
+                        <!-- Quick actions like "Admit Now" or "Clear" -->
+                    </div>
+                </div>
+
+                <!-- Recent Scans Mini Drawer -->
+                <div class="recent-scans-card">
+                    <div class="recent-header">
+                        <h4>Recent Scans (Your Session)</h4>
+                        <span id="recentCountText" class="recent-count">0 Scans</span>
+                    </div>
+                    <div id="recentScansList" class="recent-scans-list">
+                        <p class="empty-recent-msg">No passes scanned yet in this session.</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="/html5-qrcode.min.js"></script>
+    <script src="/volunteer.js"></script>
+</body>
+
+</html>

@@ -23,6 +23,7 @@
                 </div>
             </div>
             <div class="topbar-actions" id="headerActions" hidden>
+                <a href="/volunteer" target="_blank" class="btn-topbar" title="Open Volunteer Gate Scanner Portal">🎫 Volunteer Scanner &nearr;</a>
                 <a href="/api/admin/backup-db" class="btn-topbar" title="Download entire SQLite database backup (.db file)" download>💾 Backup DB</a>
                 <a href="/" target="_blank" class="btn-topbar">Public Portal &nearr;</a>
                 <button id="logoutButton" class="btn-topbar logout">Sign Out</button>
@@ -401,6 +402,44 @@
 
                 <p id="registrationsCountMessage" class="table-footer-msg"></p>
             </section>
+
+            <!-- VOLUNTEER ACCOUNTS & GATE STAFF -->
+            <section class="card section-card" id="volunteersSection">
+                <div class="card-header-row">
+                    <div>
+                        <h2>Volunteer Accounts &amp; Gate Personnel</h2>
+                        <p class="subtitle">Issue credentials for gate volunteers to scan QR passes on their smartphones. Volunteers have restricted access and cannot view finances, edit events, or download student databases.</p>
+                    </div>
+                    <div class="export-actions">
+                        <a href="/volunteer" target="_blank" class="btn-export" style="text-decoration: none; margin-right: 8px;">
+                            Open Scanner App &nearr;
+                        </a>
+                        <button type="button" class="btn-create" onclick="openCreateVolunteerModal()">
+                            + Add Volunteer Account
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Volunteer Name</th>
+                                <th>Username</th>
+                                <th>Assigned Gate / Event</th>
+                                <th>Account Status</th>
+                                <th>Last Active</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="volunteersTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center">Loading volunteer accounts...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -493,6 +532,58 @@
             </form>
 
             <div id="eventModalMessage" class="message hidden"></div>
+        </div>
+    </div>
+
+    <!-- CREATE / EDIT VOLUNTEER MODAL -->
+    <div id="volunteerModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-card">
+            <button class="modal-close" onclick="closeVolunteerModal()">&times;</button>
+            <h3 id="volunteerModalTitle">Create Volunteer Account</h3>
+            <p class="modal-subtitle">Generate login credentials for gate personnel. Volunteers will log in at <code>/volunteer</code> to scan passes.</p>
+
+            <form id="volunteerForm" class="modal-form">
+                <input type="hidden" id="modalVolunteerId" value="">
+
+                <div class="form-group">
+                    <label for="modalVolunteerName">Volunteer Full Name <span class="req">*</span></label>
+                    <input type="text" id="modalVolunteerName" placeholder="e.g. Rahul Sharma" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalVolunteerUsername">Username <span class="req">*</span></label>
+                        <input type="text" id="modalVolunteerUsername" placeholder="e.g. rahul_gate" required autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="modalVolunteerPassword">Password <span class="req" id="modalVolunteerPasswordReq">*</span></label>
+                        <input type="password" id="modalVolunteerPassword" placeholder="Minimum 4 characters" required autocomplete="new-password">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="modalVolunteerEvent">Assigned Event Restriction</label>
+                    <select id="modalVolunteerEvent">
+                        <option value="">All Events (Can scan passes for any event)</option>
+                    </select>
+                    <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;">
+                        If assigned to a specific event, this volunteer can only admit attendees for that event.
+                    </small>
+                </div>
+
+                <div class="form-group hidden" id="volunteerStatusGroup">
+                    <label for="modalVolunteerStatus">Account Status</label>
+                    <select id="modalVolunteerStatus">
+                        <option value="active">Active (Can log in &amp; scan)</option>
+                        <option value="inactive">Inactive (Disabled)</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-primary" id="saveVolunteerBtn">Create Volunteer Account</button>
+            </form>
+
+            <div id="volunteerModalMessage" class="message hidden"></div>
         </div>
     </div>
 

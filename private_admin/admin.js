@@ -60,6 +60,24 @@ const eventModalTitle = document.getElementById("eventModalTitle");
 const modalEventId = document.getElementById("modalEventId");
 const eventModalMessage = document.getElementById("eventModalMessage");
 
+// Volunteer DOM
+const volunteersTableBody = document.getElementById("volunteersTableBody");
+const volunteerModal = document.getElementById("volunteerModal");
+const volunteerForm = document.getElementById("volunteerForm");
+const volunteerModalTitle = document.getElementById("volunteerModalTitle");
+const modalVolunteerId = document.getElementById("modalVolunteerId");
+const modalVolunteerName = document.getElementById("modalVolunteerName");
+const modalVolunteerUsername = document.getElementById("modalVolunteerUsername");
+const modalVolunteerPassword = document.getElementById("modalVolunteerPassword");
+const modalVolunteerPasswordReq = document.getElementById("modalVolunteerPasswordReq");
+const modalVolunteerEvent = document.getElementById("modalVolunteerEvent");
+const modalVolunteerStatus = document.getElementById("modalVolunteerStatus");
+const volunteerStatusGroup = document.getElementById("volunteerStatusGroup");
+const volunteerModalMessage = document.getElementById("volunteerModalMessage");
+const saveVolunteerBtn = document.getElementById("saveVolunteerBtn");
+
+let adminVolunteers = [];
+
 // API Request Helper
 async function apiRequest(url, options = {}) {
     const response = await fetch(url, {
@@ -116,6 +134,7 @@ async function refreshDashboard() {
         await loadEvents();
         await loadPayments();
         await loadRegistrations();
+        await loadVolunteers();
 
     } catch (err) {
         console.error("Dashboard refresh error:", err);
@@ -201,6 +220,16 @@ function populateEventDropdowns() {
             ${adminEvents.map(ev => `<option value="${ev.id}">${escapeHtml(ev.title)}</option>`).join("")}
         `;
         if (currentPayVal) paymentEventSelect.value = currentPayVal;
+    }
+
+    // 5. Volunteer Modal Event Select
+    if (modalVolunteerEvent) {
+        const currentVolVal = modalVolunteerEvent.value;
+        modalVolunteerEvent.innerHTML = `
+            <option value="">All Events (Can scan passes for any event)</option>
+            ${adminEvents.map(ev => `<option value="${ev.id}">${escapeHtml(ev.title)}</option>`).join("")}
+        `;
+        if (currentVolVal) modalVolunteerEvent.value = currentVolVal;
     }
 }
 
@@ -450,7 +479,8 @@ async function loadRegistrations() {
             const isCheckedIn = s.checked_in === 1;
 
             const paymentBadge = `<span class="badge-pill ${isPaid ? 'active' : 'upcoming'}">${escapeHtml(s.payment_status.toUpperCase())}</span>`;
-            const gateBadge = `<span class="badge-pill" style="background:${isCheckedIn ? '#0284c7' : '#334155'}; color:white;">${isCheckedIn ? `In (${s.checked_in_at || ''})` : 'Not Arrived'}</span>`;
+            const gateStaffInfo = s.checked_in_by ? ` • ${s.checked_in_by}` : '';
+            const gateBadge = `<span class="badge-pill" style="background:${isCheckedIn ? '#0284c7' : '#334155'}; color:white;" title="${isCheckedIn ? `Admitted at ${s.checked_in_at || ''}${gateStaffInfo}` : 'Not checked in'}">${isCheckedIn ? `In (${s.checked_in_at || ''}${gateStaffInfo})` : 'Not Arrived'}</span>`;
 
             let actionHtml = "—";
             if (isCheckedIn) {
@@ -1340,6 +1370,183 @@ logoutButton.addEventListener("click", async () => {
         alert(err.message);
     }
 });
+
+// ========================================
+// VOLUNTEER ACCOUNTS & GATE STAFF LOGIC
+// ========================================
+
+async function loadVolunteers() {
+    if (!volunteersTableBody) return;
+    try {
+        const res = await apiRequest("/api/admin/volunteers");
+        adminVolunteers = res.volunteers || [];
+        renderVolunteersTable();
+    } catch (err) {
+        console.error("Load volunteers error:", err);
+        volunteersTableBody.innerHTML = `
+            <tr><td colspan="6" class="text-center" style="color:#f87171">${escapeHtml(err.message)}</td></tr>
+        `;
+    }
+}
+
+function renderVolunteersTable() {
+    if (!volunteersTableBody) return;
+    if (!adminVolunteers.length) {
+        volunteersTableBody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center">
+                    No volunteer accounts created yet. Click "+ Add Volunteer Account" to grant gate scanning access to student coordinators.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    volunteersTableBody.innerHTML = adminVolunteers.map(v => {
+        const isActive = v.status === "active";
+        const statusBadge = `<span class="badge-pill ${isActive ? 'active' : 'upcoming'}">${escapeHtml(v.status.toUpperCase())}</span>`;
+        const eventText = v.assigned_event_title
+            ? `<span style="color:#60a5fa; font-weight:600;">${escapeHtml(v.assigned_event_title)}</span>`
+            : `<span style="color:#a3a3a3;">All Events (Universal Gate)</span>`;
+        const lastActive = v.last_login_at || '<span style="color:#737373">Never logged in</span>';
+
+        return `
+            <tr>
+                <td><strong>${escapeHtml(v.name)}</strong></td>
+                <td><code style="background:rgba(37,99,235,0.15); color:#60a5fa; padding:2px 6px; border-radius:4px;">${escapeHtml(v.username)}</code></td>
+                <td>${eventText}</td>
+                <td>${statusBadge}</td>
+                <td><small style="color:#cbd5e1">${lastActive}</small></td>
+                <td>
+                    <button class="btn-action" onclick="openEditVolunteerModal(${v.id})" title="Edit or Reset Password">Edit</button>
+                    <button class="btn-action" onclick="toggleVolunteerStatus(${v.id}, '${isActive ? 'inactive' : 'active'}')" title="Change Status">
+                        ${isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button class="btn-action delete" onclick="deleteVolunteer(${v.id}, '${escapeHtml(v.name)}')" title="Delete Account">Delete</button>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+window.openCreateVolunteerModal = function() {
+    if (!volunteerModal) return;
+    volunteerForm.reset();
+    modalVolunteerId.value = "";
+    volunteerModalTitle.textContent = "Create Volunteer Account";
+    modalVolunteerUsername.disabled = false;
+    modalVolunteerPassword.required = true;
+    modalVolunteerPassword.placeholder = "Minimum 4 characters";
+    if (modalVolunteerPasswordReq) modalVolunteerPasswordReq.textContent = "*";
+    if (volunteerStatusGroup) volunteerStatusGroup.classList.add("hidden");
+    if (volunteerModalMessage) volunteerModalMessage.classList.add("hidden");
+    if (saveVolunteerBtn) saveVolunteerBtn.textContent = "Create Volunteer Account";
+    volunteerModal.classList.remove("hidden");
+};
+
+window.openEditVolunteerModal = function(id) {
+    if (!volunteerModal) return;
+    const v = adminVolunteers.find(item => item.id === id);
+    if (!v) return;
+
+    modalVolunteerId.value = v.id;
+    volunteerModalTitle.textContent = `Edit Volunteer: ${v.name}`;
+    modalVolunteerName.value = v.name;
+    modalVolunteerUsername.value = v.username;
+    modalVolunteerUsername.disabled = true; // username locked
+    modalVolunteerPassword.value = "";
+    modalVolunteerPassword.required = false;
+    modalVolunteerPassword.placeholder = "Leave blank to keep existing password";
+    if (modalVolunteerPasswordReq) modalVolunteerPasswordReq.textContent = "(optional)";
+    if (modalVolunteerEvent) modalVolunteerEvent.value = v.assigned_event_id ? String(v.assigned_event_id) : "";
+    if (modalVolunteerStatus) modalVolunteerStatus.value = v.status || "active";
+    if (volunteerStatusGroup) volunteerStatusGroup.classList.remove("hidden");
+    if (volunteerModalMessage) volunteerModalMessage.classList.add("hidden");
+    if (saveVolunteerBtn) saveVolunteerBtn.textContent = "Update Volunteer Account";
+    volunteerModal.classList.remove("hidden");
+};
+
+window.closeVolunteerModal = function() {
+    if (volunteerModal) volunteerModal.classList.add("hidden");
+};
+
+if (volunteerForm) {
+    volunteerForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (saveVolunteerBtn) saveVolunteerBtn.disabled = true;
+        if (volunteerModalMessage) {
+            volunteerModalMessage.textContent = "Saving volunteer credentials...";
+            volunteerModalMessage.className = "message info";
+            volunteerModalMessage.classList.remove("hidden");
+        }
+
+        const id = modalVolunteerId.value;
+        const name = modalVolunteerName.value.trim();
+        const username = modalVolunteerUsername.value.trim();
+        const password = modalVolunteerPassword.value.trim();
+        const assignedEventId = modalVolunteerEvent.value || null;
+        const status = modalVolunteerStatus ? modalVolunteerStatus.value : "active";
+
+        try {
+            if (id) {
+                // Update
+                const payload = { name, assignedEventId, status };
+                if (password) payload.password = password;
+                await apiRequest(`/api/admin/volunteers/${id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                showToast("Volunteer updated successfully.");
+            } else {
+                // Create
+                await apiRequest("/api/admin/volunteers", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name, username, password, assignedEventId })
+                });
+                showToast("Volunteer account created!");
+            }
+
+            closeVolunteerModal();
+            await loadVolunteers();
+
+        } catch (err) {
+            if (volunteerModalMessage) {
+                volunteerModalMessage.textContent = err.message;
+                volunteerModalMessage.className = "message error";
+                volunteerModalMessage.classList.remove("hidden");
+            }
+        } finally {
+            if (saveVolunteerBtn) saveVolunteerBtn.disabled = false;
+        }
+    });
+}
+
+window.toggleVolunteerStatus = async function(id, newStatus) {
+    try {
+        await apiRequest(`/api/admin/volunteers/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus })
+        });
+        showToast(`Volunteer ${newStatus === 'active' ? 'activated' : 'deactivated'}.`);
+        await loadVolunteers();
+    } catch (err) {
+        alert(err.message);
+    }
+};
+
+window.deleteVolunteer = async function(id, name) {
+    if (!confirm(`Are you sure you want to permanently delete volunteer "${name}"?`)) return;
+    try {
+        await apiRequest(`/api/admin/volunteers/${id}`, { method: "DELETE" });
+        showToast("Volunteer account deleted.");
+        await loadVolunteers();
+    } catch (err) {
+        alert(err.message);
+    }
+};
 
 // Initialize session
 async function initializeDashboard() {

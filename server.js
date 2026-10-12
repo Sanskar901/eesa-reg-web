@@ -146,6 +146,11 @@ app.get(["/eesa-admin.js", `${ADMIN_PATH}/admin.js`], (req, res) => {
     res.sendFile(path.join(__dirname, "private_admin", "admin.js"));
 });
 
+// Serve Volunteer Scanner Portal
+app.get(["/volunteer", "/volunteer/", "/gate", "/scanner"], (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "volunteer.html"));
+});
+
 // 1. Events Table
 db.exec(`
     CREATE TABLE IF NOT EXISTS events (
@@ -214,10 +219,25 @@ try { db.exec("ALTER TABLE registrations ADD COLUMN checked_in_at TEXT;"); } cat
 try { db.exec("ALTER TABLE registrations ADD COLUMN utr_number TEXT;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN payment_vpa TEXT;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN payment_bank TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE registrations ADD COLUMN checked_in_by TEXT;"); } catch (e) {}
 try {
     db.exec("DROP INDEX IF EXISTS idx_registrations_college_id;");
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_event_college ON registrations(event_id, college_id);");
 } catch (e) {}
+
+// 4. Volunteers Table (Gate Scanner Accounts)
+db.exec(`
+    CREATE TABLE IF NOT EXISTS volunteers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        assigned_event_id INTEGER DEFAULT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        last_login_at TEXT
+    );
+`);
 
 // Razorpay Client Helper (Supports both test and live credentials)
 function getRazorpay() {
@@ -475,6 +495,506 @@ app.post("/api/admin/logout", requireAdmin, (req, res, next) => {
             message: "Logged out successfully."
         });
     });
+});
+
+// ========================================
+// VOLUNTEER AUTHENTICATION & ACCESS CONTROL
+// ========================================
+
+function hashPassword(password) {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+    return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedHash) {
+    if (!storedHash || typeof storedHash !== "string" || !storedHash.includes(":")) return false;
+    const [salt, key] = storedHash.split(":");
+    const keyBuffer = Buffer.from(key, "hex");
+    const derivedKey = crypto.scryptSync(password, salt, 64);
+    return crypto.timingSafeEqual(keyBuffer, derivedKey);
+}
+
+function requireVolunteer(req, res, next) {
+    if (!req.session || (!req.session.isVolunteer && !req.session.isAdmin)) {
+        return res.status(401).json({
+            success: false,
+            message: "Volunteer sign in required."
+        });
+    }
+    next();
+}
+
+// IP-based Brute-Force Rate Limiting for Volunteer Login
+const volunteerLoginAttempts = new Map();
+
+function checkVolunteerLoginRateLimit(ip) {
+    const now = Date.now();
+    const entry = volunteerLoginAttempts.get(ip);
+    if (!entry) return { allowed: true };
+    if (now > entry.resetAt) {
+        volunteerLoginAttempts.delete(ip);
+        return { allowed: true };
+    }
+    if (entry.count >= 8) {
+        const remainingMinutes = Math.max(1, Math.ceil((entry.resetAt - now) / 60000));
+        return { allowed: false, remainingMinutes };
+    }
+    return { allowed: true };
+}
+
+function recordFailedVolunteerLogin(ip) {
+    const now = Date.now();
+    const entry = volunteerLoginAttempts.get(ip) || { count: 0, resetAt: now + 15 * 60 * 1000 };
+    entry.count += 1;
+    volunteerLoginAttempts.set(ip, entry);
+}
+
+function clearFailedVolunteerLogin(ip) {
+    volunteerLoginAttempts.delete(ip);
+}
+
+// Volunteer Sign In
+app.post("/api/volunteer/login", (req, res, next) => {
+    const { username, password } = req.body || {};
+    const clientIp = req.ip || req.socket.remoteAddress || "unknown";
+
+    const rateCheck = checkVolunteerLoginRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+        return res.status(429).json({
+            success: false,
+            message: `Too many failed attempts. Try again in ${rateCheck.remainingMinutes} minute(s).`
+        });
+    }
+
+    if (!username || !password) {
+        return res.status(400).json({
+            success: false,
+            message: "Username and password are required."
+        });
+    }
+
+    const cleanUser = String(username).trim().toLowerCase();
+    const volunteer = db.prepare("SELECT * FROM volunteers WHERE username = ?").get(cleanUser);
+
+    if (!volunteer || !verifyPassword(String(password).trim(), volunteer.password_hash)) {
+        recordFailedVolunteerLogin(clientIp);
+        return res.status(401).json({
+            success: false,
+            message: "Invalid username or password."
+        });
+    }
+
+    if (volunteer.status !== "active") {
+        return res.status(403).json({
+            success: false,
+            message: "Your volunteer account has been deactivated by the Admin."
+        });
+    }
+
+    clearFailedVolunteerLogin(clientIp);
+
+    const nowStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    try {
+        db.prepare("UPDATE volunteers SET last_login_at = ? WHERE id = ?").run(nowStr, volunteer.id);
+    } catch (e) {}
+
+    req.session.regenerate((err) => {
+        if (err) return next(err);
+
+        req.session.isVolunteer = true;
+        req.session.volunteerId = volunteer.id;
+        req.session.volunteerUsername = volunteer.username;
+        req.session.volunteerName = volunteer.name;
+        req.session.volunteerAssignedEvent = volunteer.assigned_event_id;
+
+        req.session.save((saveError) => {
+            if (saveError) return next(saveError);
+            res.json({
+                success: true,
+                message: "Volunteer sign in successful.",
+                volunteer: {
+                    id: volunteer.id,
+                    name: volunteer.name,
+                    username: volunteer.username,
+                    assignedEventId: volunteer.assigned_event_id
+                }
+            });
+        });
+    });
+});
+
+// Volunteer Auth Check
+app.get("/api/volunteer/me", requireVolunteer, (req, res) => {
+    let eventTitle = null;
+    if (req.session.volunteerAssignedEvent) {
+        const ev = db.prepare("SELECT title FROM events WHERE id = ?").get(req.session.volunteerAssignedEvent);
+        if (ev) eventTitle = ev.title;
+    }
+    res.json({
+        success: true,
+        authenticated: true,
+        volunteer: {
+            id: req.session.volunteerId,
+            name: req.session.volunteerName || (req.session.isAdmin ? "Administrator" : "Volunteer"),
+            username: req.session.volunteerUsername || "admin",
+            assignedEventId: req.session.volunteerAssignedEvent || null,
+            assignedEventTitle: eventTitle,
+            isAdmin: req.session.isAdmin === true
+        }
+    });
+});
+
+// Volunteer Sign Out
+app.post("/api/volunteer/logout", requireVolunteer, (req, res, next) => {
+    req.session.destroy((err) => {
+        if (err) return next(err);
+        res.clearCookie("eesa_admin_session");
+        res.json({
+            success: true,
+            message: "Logged out successfully."
+        });
+    });
+});
+
+// Volunteer Events List
+app.get("/api/volunteer/events", requireVolunteer, (req, res) => {
+    try {
+        const assignedId = req.session.volunteerAssignedEvent;
+        let events;
+        if (assignedId) {
+            events = db.prepare("SELECT id, title, date, venue, status FROM events WHERE id = ?").all(assignedId);
+        } else {
+            events = db.prepare("SELECT id, title, date, venue, status FROM events ORDER BY id ASC").all();
+        }
+        res.json({ success: true, events, assignedEventId: assignedId || null });
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Unable to load events." });
+    }
+});
+
+// Volunteer Live Gate Stats (Safe: No revenue or financial data)
+app.get("/api/volunteer/stats", requireVolunteer, (req, res) => {
+    try {
+        const eventId = req.query.eventId ? parseInt(req.query.eventId, 10) : (req.session.volunteerAssignedEvent || null);
+        let query = `
+            SELECT
+                COUNT(*) AS total_registered,
+                COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END), 0) AS total_paid,
+                COALESCE(SUM(CASE WHEN checked_in = 1 THEN 1 ELSE 0 END), 0) AS checked_in_count
+            FROM registrations
+        `;
+        const params = [];
+        if (eventId) {
+            query += " WHERE event_id = ?";
+            params.push(eventId);
+        }
+        const stats = db.prepare(query).get(...params);
+        res.json({
+            success: true,
+            totalPaid: stats.total_paid,
+            checkedInCount: stats.checked_in_count
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: "Error loading gate stats." });
+    }
+});
+
+// Volunteer Gate Pass Verification (Strictly Sanitized: No Payment Details Exposed)
+app.post("/api/volunteer/verify-entry", requireVolunteer, (req, res) => {
+    try {
+        let { code, eventId } = req.body || {};
+        if (!code) {
+            return res.status(400).json({
+                success: false,
+                message: "Please enter or scan a pass identifier (Registration ID, QR Number, or Token)."
+            });
+        }
+
+        code = String(code).trim();
+        let searchRegId = code;
+        let searchQrNum = code;
+        let searchToken = code;
+
+        if (code.startsWith("{") && code.endsWith("}")) {
+            try {
+                const parsed = JSON.parse(code);
+                if (parsed.registrationId) searchRegId = parsed.registrationId;
+                if (parsed.qrNumber) searchQrNum = parsed.qrNumber;
+                if (parsed.token) searchToken = parsed.token;
+                if (parsed.eventId && !eventId) eventId = parsed.eventId;
+            } catch (e) {}
+        }
+
+        // Enforce volunteer event assignment if locked to an event
+        if (req.session.volunteerAssignedEvent) {
+            eventId = req.session.volunteerAssignedEvent;
+        }
+
+        let studentQuery = `
+            SELECT r.*, e.title AS event_title
+            FROM registrations r
+            LEFT JOIN events e ON e.id = r.event_id
+            WHERE (
+                r.registration_id = ?
+                OR r.qr_number = ?
+                OR r.qr_token = ?
+                OR r.college_id = ?
+            )
+        `;
+        const params = [searchRegId, searchQrNum, searchToken, normalizeCollegeId(code)];
+
+        if (eventId) {
+            studentQuery += " AND r.event_id = ?";
+            params.push(parseInt(eventId, 10));
+        }
+        studentQuery += " ORDER BY r.checked_in ASC, r.id DESC";
+
+        const student = db.prepare(studentQuery).get(...params);
+
+        if (!student) {
+            // Check if pass belongs to another event
+            const otherEvent = db.prepare(`
+                SELECT r.*, e.title AS event_title
+                FROM registrations r
+                LEFT JOIN events e ON e.id = r.event_id
+                WHERE (
+                    r.registration_id = ?
+                    OR r.qr_number = ?
+                    OR r.qr_token = ?
+                    OR r.college_id = ?
+                )
+                ORDER BY r.id DESC
+            `).get(searchRegId, searchQrNum, searchToken, normalizeCollegeId(code));
+
+            if (otherEvent) {
+                return res.status(400).json({
+                    success: false,
+                    isEventMismatch: true,
+                    message: `WRONG EVENT PASS: This pass is for "${otherEvent.event_title}". Please direct attendee to that event gate.`
+                });
+            }
+
+            return res.status(404).json({
+                success: false,
+                isNotFound: true,
+                message: "PASS NOT FOUND: No registration record matches this QR Code or ID."
+            });
+        }
+
+        const isUnpaid = student.payment_status !== "paid";
+        const isReused = student.checked_in === 1;
+        const isPreview = Boolean(req.body?.preview);
+
+        // Sanitized student details (SAFE FOR VOLUNTEER VIEW)
+        const studentDetails = {
+            id: student.id,
+            name: student.name,
+            collegeId: student.college_id,
+            department: student.department,
+            academicYear: student.academic_year,
+            mobile: student.mobile,
+            eventTitle: student.event_title,
+            registrationId: student.registration_id || "N/A",
+            checkedIn: student.checked_in === 1,
+            checkedInAt: student.checked_in_at,
+            checkedInBy: student.checked_in_by || "Gate Staff"
+        };
+
+        if (isUnpaid) {
+            return res.status(400).json({
+                success: false,
+                isUnpaid: true,
+                message: `PAYMENT PENDING / NOT PAID. Entry is strictly forbidden.`,
+                student: studentDetails
+            });
+        }
+
+        if (isReused) {
+            return res.status(409).json({
+                success: false,
+                alreadyCheckedIn: true,
+                isReused: true,
+                message: `PASS REUSED! Already admitted at ${student.checked_in_at}${student.checked_in_by ? ' by ' + student.checked_in_by : ''}.`,
+                student: studentDetails
+            });
+        }
+
+        if (isPreview) {
+            return res.json({
+                success: true,
+                isValid: true,
+                isPreview: true,
+                message: `PASS VALID (Preview Mode): Ready to admit student into "${student.event_title}".`,
+                student: studentDetails
+            });
+        }
+
+        const checkInTime = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+        const volunteerName = req.session.volunteerName || (req.session.isAdmin ? "Admin" : "Volunteer");
+
+        db.prepare(`
+            UPDATE registrations
+            SET checked_in = 1,
+                checked_in_at = ?,
+                checked_in_by = ?
+            WHERE id = ?
+        `).run(checkInTime, volunteerName, student.id);
+
+        studentDetails.checkedIn = true;
+        studentDetails.checkedInAt = checkInTime;
+        studentDetails.checkedInBy = volunteerName;
+
+        res.json({
+            success: true,
+            isValid: true,
+            message: `PASS VALID & ENTRY APPROVED for "${student.event_title}"!`,
+            student: studentDetails
+        });
+
+    } catch (error) {
+        console.error("Volunteer gate verification error:", error.message);
+        res.status(500).json({ success: false, message: "Error verifying gate pass." });
+    }
+});
+
+// ========================================
+// ADMIN VOLUNTEER ACCOUNT MANAGEMENT
+// ========================================
+
+// Get all volunteers
+app.get("/api/admin/volunteers", requireAdmin, (req, res) => {
+    try {
+        const volunteers = db.prepare(`
+            SELECT
+                v.id,
+                v.name,
+                v.username,
+                v.assigned_event_id,
+                e.title AS assigned_event_title,
+                v.status,
+                v.created_at,
+                v.last_login_at
+            FROM volunteers v
+            LEFT JOIN events e ON e.id = v.assigned_event_id
+            ORDER BY v.id DESC
+        `).all();
+
+        res.json({ success: true, volunteers });
+    } catch (err) {
+        console.error("Admin list volunteers error:", err.message);
+        res.status(500).json({ success: false, message: "Unable to load volunteer accounts." });
+    }
+});
+
+// Create volunteer account
+app.post("/api/admin/volunteers", requireAdmin, (req, res) => {
+    try {
+        const { name, username, password, assignedEventId } = req.body || {};
+
+        if (!name?.trim() || !username?.trim() || !password?.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "Volunteer full name, username, and password are required."
+            });
+        }
+
+        const cleanUser = username.trim().toLowerCase();
+        if (cleanUser.length < 3) {
+            return res.status(400).json({
+                success: false,
+                message: "Username must be at least 3 characters long."
+            });
+        }
+
+        if (password.trim().length < 4) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 4 characters long."
+            });
+        }
+
+        const existing = db.prepare("SELECT id FROM volunteers WHERE username = ?").get(cleanUser);
+        if (existing) {
+            return res.status(409).json({
+                success: false,
+                message: "A volunteer account with this username already exists."
+            });
+        }
+
+        const passwordHash = hashPassword(password.trim());
+        const targetEventId = assignedEventId ? parseInt(assignedEventId, 10) : null;
+
+        const result = db.prepare(`
+            INSERT INTO volunteers (name, username, password_hash, assigned_event_id, status)
+            VALUES (?, ?, ?, ?, 'active')
+        `).run(name.trim(), cleanUser, passwordHash, targetEventId);
+
+        res.json({
+            success: true,
+            message: "Volunteer account created successfully!",
+            volunteerId: result.lastInsertRowid
+        });
+    } catch (err) {
+        console.error("Admin create volunteer error:", err.message);
+        res.status(500).json({ success: false, message: "Error creating volunteer account: " + err.message });
+    }
+});
+
+// Update volunteer account
+app.put("/api/admin/volunteers/:id", requireAdmin, (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const { name, status, assignedEventId, password } = req.body || {};
+
+        const volunteer = db.prepare("SELECT * FROM volunteers WHERE id = ?").get(id);
+        if (!volunteer) {
+            return res.status(404).json({ success: false, message: "Volunteer account not found." });
+        }
+
+        let newHash = volunteer.password_hash;
+        if (password && password.trim()) {
+            if (password.trim().length < 4) {
+                return res.status(400).json({ success: false, message: "Password must be at least 4 characters long." });
+            }
+            newHash = hashPassword(password.trim());
+        }
+
+        const newName = name?.trim() ? name.trim() : volunteer.name;
+        const newStatus = status ? status : volunteer.status;
+        const newEventId = assignedEventId !== undefined
+            ? (assignedEventId ? parseInt(assignedEventId, 10) : null)
+            : volunteer.assigned_event_id;
+
+        db.prepare(`
+            UPDATE volunteers
+            SET name = ?,
+                status = ?,
+                assigned_event_id = ?,
+                password_hash = ?
+            WHERE id = ?
+        `).run(newName, newStatus, newEventId, newHash, id);
+
+        res.json({
+            success: true,
+            message: "Volunteer account updated successfully!"
+        });
+    } catch (err) {
+        console.error("Admin update volunteer error:", err.message);
+        res.status(500).json({ success: false, message: "Error updating volunteer account: " + err.message });
+    }
+});
+
+// Delete volunteer account
+app.delete("/api/admin/volunteers/:id", requireAdmin, (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        db.prepare("DELETE FROM volunteers WHERE id = ?").run(id);
+        res.json({ success: true, message: "Volunteer account deleted successfully." });
+    } catch (err) {
+        console.error("Admin delete volunteer error:", err.message);
+        res.status(500).json({ success: false, message: "Error deleting volunteer account." });
+    }
 });
 
 // ========================================
@@ -890,6 +1410,7 @@ app.get("/api/admin/registrations", requireAdmin, (req, res) => {
                 r.payment_status,
                 r.checked_in,
                 r.checked_in_at,
+                r.checked_in_by,
                 r.created_at,
                 r.paid_at
             FROM registrations r
@@ -1045,7 +1566,8 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
         db.prepare(`
             UPDATE registrations
             SET checked_in = 1,
-                checked_in_at = ?
+                checked_in_at = ?,
+                checked_in_by = 'Administrator'
             WHERE id = ?
         `).run(checkInTime, student.id);
 
