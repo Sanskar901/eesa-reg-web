@@ -213,9 +213,9 @@ app.get(["/volunteer", "/volunteer/", "/gate", "/scanner"], (req, res) => {
     res.sendFile(path.join(__dirname, "public", "volunteer.html"));
 });
 
-// Serve PayU Gateway Test Lab & Demo Workbench
+// Redirect legacy demo routes to homepage
 app.get(["/payu-demo", "/payu-demo/", "/demo/payu"], (req, res) => {
-    res.sendFile(path.join(__dirname, "public", "payu-demo.html"));
+    res.redirect("/");
 });
 
 // 1. Events Table
@@ -2808,8 +2808,7 @@ app.post("/api/payu/callback", async (req, res) => {
             </div>
 
             <div class="btn-group">
-                <a href="/payu-demo" class="btn btn-gold">← Return to PayU Test Lab</a>
-                <a href="/" class="btn btn-outline">Go to EESA Home</a>
+                <a href="/" class="btn btn-gold">← Return to EESA Portal</a>
             </div>
         </div>
     </div>
@@ -2820,7 +2819,7 @@ app.post("/api/payu/callback", async (req, res) => {
 
     } catch (err) {
         console.error("PayU callback error:", err);
-        res.status(500).send("<h3>Error processing PayU callback</h3><p>" + err.message + "</p><a href='/payu-demo'>Return to Test Lab</a>");
+        res.status(500).send("<h3>Error processing PayU callback</h3><p>" + err.message + "</p><a href='/'>Return to EESA Portal</a>");
     }
 });
 
