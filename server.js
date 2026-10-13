@@ -2227,10 +2227,14 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
         // Generate unique PayU transaction ID
         const txnid = "EESA_" + Date.now() + "_" + crypto.randomBytes(3).toString("hex").toUpperCase();
 
-        const host = req.get("host");
-        const protocol = req.protocol || "http";
-        const surl = `${protocol}://${host}/api/payu/callback`;
-        const furl = `${protocol}://${host}/api/payu/callback`;
+        const host = req.get("host") || "localhost";
+        const isLocal = host.includes("localhost") || host.includes("127.0.0.1");
+        const protocol = isLocal ? (req.headers["x-forwarded-proto"] || req.protocol || "http") : "https";
+        const baseUrl = process.env.BASE_URL
+            ? process.env.BASE_URL.replace(/\/+$/, "")
+            : `${protocol}://${host}`;
+        const surl = `${baseUrl}/api/payu/callback`;
+        const furl = `${baseUrl}/api/payu/callback`;
 
         const udf1 = normalizedCollegeId;
         const udf2 = department.trim();
@@ -2253,6 +2257,8 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
             udf5,
             salt
         });
+
+        const payuCreds = resolvePayUCredentials();
 
         if (existingRegistration && existingRegistration.payment_status === "pending") {
             db.prepare(`
@@ -2292,6 +2298,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
                 furl,
                 hash,
                 actionUrl,
+                boltScriptUrl: payuCreds.boltScriptUrl,
                 env,
                 eventTitle: targetEvent.title,
                 registrationRecord: existingRegistration.id
@@ -2329,6 +2336,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
             furl,
             hash,
             actionUrl,
+            boltScriptUrl: payuCreds.boltScriptUrl,
             env,
             eventTitle: targetEvent.title,
             registrationRecord: insertResult.lastInsertRowid
@@ -2582,11 +2590,15 @@ const PAYU_PROD_URL = "https://secure.payu.in/_payment";
 
 // Helper to determine key & salt
 function resolvePayUCredentials(customKey, customSalt) {
-    const key = (customKey || process.env.PAYU_MERCHANT_KEY || "gtKFFx").trim();
-    const salt = (customSalt || process.env.PAYU_MERCHANT_SALT || "eCwWELxi").trim();
-    const env = (process.env.PAYU_ENV || "test").toLowerCase();
-    const actionUrl = (env === "prod" || env === "production") ? PAYU_PROD_URL : PAYU_TEST_URL;
-    return { key, salt, env, actionUrl };
+    const key = (customKey || process.env.PAYU_MERCHANT_KEY || "").trim();
+    const salt = (customSalt || process.env.PAYU_MERCHANT_SALT || "").trim();
+    const env = (process.env.PAYU_ENV || "prod").toLowerCase().trim();
+    const isLive = env === "prod" || env === "production" || env === "live";
+    const actionUrl = isLive ? PAYU_PROD_URL : PAYU_TEST_URL;
+    const boltScriptUrl = isLive
+        ? "https://jssdk.payu.in/bolt/bolt.min.js" 
+        : "https://jssdk-uat.payu.in/bolt/bolt.min.js";
+    return { key, salt, env: isLive ? "prod" : "test", isLive, actionUrl, boltScriptUrl };
 }
 
 // SHA-512 Request Hash calculation
@@ -2639,25 +2651,27 @@ function verifyPayUResponseHash(params, salt) {
 
 // Config endpoint: Returns current PayU configuration state
 app.get("/api/payu/config", (req, res) => {
-    const hasKey = !!process.env.PAYU_MERCHANT_KEY;
-    const hasSalt = !!process.env.PAYU_MERCHANT_SALT;
-    const env = (process.env.PAYU_ENV || "test").toLowerCase();
-
+    const creds = resolvePayUCredentials();
     res.json({
-        configured: hasKey && hasSalt,
-        env,
-        key: process.env.PAYU_MERCHANT_KEY || "gtKFFx",
-        hasSalt,
-        actionUrl: (env === "prod" || env === "production") ? PAYU_PROD_URL : PAYU_TEST_URL,
-        boltScriptUrl: (env === "prod" || env === "production")
-            ? "https://jssdk.payu.in/bolt/bolt.min.js" 
-            : "https://jssdk-uat.payu.in/bolt/bolt.min.js"
+        configured: !!creds.key && !!creds.salt,
+        env: creds.env,
+        isLive: creds.isLive,
+        key: creds.key || "",
+        hasSalt: !!creds.salt,
+        actionUrl: creds.actionUrl,
+        boltScriptUrl: creds.boltScriptUrl
     });
 });
-// Endpoint: HTTP POST Callback handler for PayU Hosted Checkout (surl & furl)
-app.post("/api/payu/callback", async (req, res) => {
+// Endpoint: HTTP POST/GET Callback handler for PayU Hosted Checkout (surl & furl)
+app.all(["/api/payu/callback", "/api/payu/success", "/api/payu/failure"], async (req, res) => {
     try {
-        const payload = req.body || {};
+        if (req.method === "GET" && (!req.query || Object.keys(req.query).length === 0)) {
+            return res.redirect("/#passes");
+        }
+
+        res.removeHeader("X-Frame-Options");
+
+        const payload = req.method === "POST" ? (req.body || {}) : (req.query || {});
         const { salt } = resolvePayUCredentials(payload.key);
         const verification = verifyPayUResponseHash(payload, salt);
 
@@ -2757,7 +2771,7 @@ app.post("/api/payu/callback", async (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PayU Payment Callback • EESA JSPM</title>
+    <title>PayU Payment Confirmation • EESA JSPM</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2775,7 +2789,7 @@ app.post("/api/payu/callback", async (req, res) => {
         .meta-item { display: flex; flex-direction: column; }
         .meta-label { font-size: 11px; text-transform: uppercase; color: #94A3B8; font-weight: 600; letter-spacing: 0.5px; }
         .meta-val { font-size: 14px; color: #F8FAFC; font-weight: 600; margin-top: 3px; word-break: break-all; }
-        .qr-section { text-align: center; background: #FFFFFF; color: #0F172A; padding: 20px; border-radius: 12px; margin: 20px 0; }
+        .qr-section { text-align: center; background: #FFFFFF; color: #0F172A; padding: 20px; border-radius: 12px; margin: 20px 0; border: 2px solid #F5B700; }
         .qr-img { width: 180px; height: 180px; margin: 10px auto; display: block; border-radius: 8px; }
         .qr-pass-title { font-weight: 700; font-size: 16px; color: #1F3B8C; }
         .btn-group { display: flex; gap: 12px; margin-top: 24px; }
@@ -2791,13 +2805,13 @@ app.post("/api/payu/callback", async (req, res) => {
     <div class="receipt-card">
         <div class="receipt-header">
             <div class="receipt-icon">${isSuccess ? '✅' : '❌'}</div>
-            <h1 class="receipt-title">${isSuccess ? 'Payment Successful' : 'Payment Failed / Rejected'}</h1>
-            <p class="receipt-sub">PayU India Hosted Payment Gateway Response</p>
+            <h1 class="receipt-title">${isSuccess ? 'Payment Confirmed' : 'Payment Failed / Cancelled'}</h1>
+            <p class="receipt-sub">${isSuccess ? 'Official Academic Entry Pass Issued' : 'Transaction Not Completed by Payment Gateway'}</p>
         </div>
         <div class="receipt-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span class="badge ${verification.isValid ? 'badge-verified' : 'badge-danger'}">
-                    ${verification.isValid ? '✓ SHA-512 Security Hash Verified' : '✗ Security Hash Mismatch'}
+                    ${verification.isValid ? '✓ Official PayU Security Hash Verified' : '✗ Security Signature Mismatch'}
                 </span>
                 <span style="font-size:12px; color:#94A3B8;">${new Date().toLocaleTimeString()}</span>
             </div>
@@ -2831,24 +2845,23 @@ app.post("/api/payu/callback", async (req, res) => {
 
             ${isSuccess && qrImage ? `
             <div class="qr-section">
-                <div class="qr-pass-title">🎫 Official Digital Entry Pass (Demo)</div>
-                <p style="font-size:12px; color:#64748B;">Student: <strong>${payload.firstname || 'Student'}</strong> • Reg ID: <strong>${registrationId}</strong></p>
+                <div class="qr-pass-title">🎫 Official Confirmed Digital Entry Pass</div>
+                <p style="font-size:12px; color:#64748B;">Student: <strong>${escapeHtml(matchedStudentName)}</strong> • Reg ID: <strong>${registrationId}</strong></p>
                 <img src="${qrImage}" alt="QR Entry Pass" class="qr-img">
-                <p style="font-size:11px; color:#475569;">Show this QR code at the registration gate or volunteer scanner.</p>
+                <p style="font-size:11px; color:#475569; margin-bottom: 12px;">Present this official QR code at the registration gate scanner.</p>
+                <a href="${qrImage}" download="EESA-${registrationId}.png" class="btn btn-gold" style="display:inline-block; max-width:240px; padding:10px 18px; margin:0 auto; font-size:13px; text-decoration:none;">⬇️ Download Pass Image</a>
             </div>
             ` : ''}
 
-            <div class="hash-box">
-                <div><strong>Reverse Hash Verification:</strong></div>
-                <div style="margin: 4px 0;">Received Hash: ${verification.receivedHash || 'None'}</div>
-                <div>Calculated Hash: ${verification.calculatedHash}</div>
-                <div style="color:${verification.isValid ? '#10B981' : '#EF4444'}; margin-top:4px;">
-                    Match Verdict: ${verification.isValid ? 'MATCH (Authentic payload from PayU)' : 'MISMATCH (Tampered or incorrect salt)'}
-                </div>
-            </div>
+            <details class="hash-box" style="cursor:pointer;">
+                <summary style="font-weight:600; font-size:12px; color:#cbd5e1;">🔒 Security Signature Details (${verification.isValid ? 'Verified Authentic' : 'Mismatch'})</summary>
+                <div style="margin: 8px 0 4px; font-size:11px;">Verification Status: ${verification.isValid ? '<span style="color:#10B981">✓ Verified SHA-512 Signature</span>' : '<span style="color:#EF4444">✗ Signature Mismatch</span>'}</div>
+                <div style="font-size:11px; word-break:break-all;">Transaction Ref: ${payload.txnid || 'N/A'} • PayU ID: ${payload.mihpayid || 'N/A'}</div>
+            </details>
 
             <div class="btn-group">
-                <a href="/" class="btn btn-gold">← Return to EESA Portal</a>
+                <a href="/#passes" class="btn btn-gold">View My Passes Desk ➔</a>
+                <a href="/" class="btn btn-outline">← Back to EESA Home</a>
             </div>
         </div>
     </div>

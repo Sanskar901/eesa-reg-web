@@ -372,7 +372,7 @@ eventRegistrationForm.addEventListener('submit', async function (e) {
             function submitPayUHostedForm(data) {
                 const form = document.createElement('form');
                 form.method = 'POST';
-                form.action = data.actionUrl || 'https://test.payu.in/_payment';
+                form.action = data.actionUrl || 'https://secure.payu.in/_payment';
                 form.style.display = 'none';
 
                 const fields = {
