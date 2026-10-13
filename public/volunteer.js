@@ -557,6 +557,12 @@
                     <span class="detail-label">Attendee Name</span>
                     <span class="detail-value name-highlight">${escapeHtml(student.name)}</span>
                 </div>
+                ${student.email ? `
+                <div class="detail-item full-width">
+                    <span class="detail-label">Student Email</span>
+                    <span class="detail-value" style="color:#93c5fd; font-size:12px;">${escapeHtml(student.email)}</span>
+                </div>
+                ` : ''}
                 <div class="detail-item">
                     <span class="detail-label">College ID / PRN</span>
                     <span class="detail-value mono">${escapeHtml(student.collegeId)}</span>

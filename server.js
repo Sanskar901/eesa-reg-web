@@ -259,6 +259,7 @@ db.exec(`
         qr_number TEXT UNIQUE,
         qr_token TEXT UNIQUE,
         name TEXT NOT NULL,
+        email TEXT,
         college_id TEXT NOT NULL,
         department TEXT NOT NULL,
         academic_year TEXT NOT NULL,
@@ -281,6 +282,7 @@ db.exec(`
 
 // Safe migrations if tables were previously created without these columns
 try { db.exec("ALTER TABLE registrations ADD COLUMN event_id INTEGER DEFAULT 1;"); } catch (e) {}
+try { db.exec("ALTER TABLE registrations ADD COLUMN email TEXT;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN checked_in INTEGER DEFAULT 0;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN checked_in_at TEXT;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN utr_number TEXT;"); } catch (e) {}
@@ -293,6 +295,7 @@ try {
     db.exec("DROP INDEX IF EXISTS idx_registrations_college_id;");
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_event_college ON registrations(event_id, college_id);");
     db.exec("CREATE INDEX IF NOT EXISTS idx_registrations_payu_txnid ON registrations(payu_txnid);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_registrations_email ON registrations(email);");
 } catch (e) {}
 
 // 4. Volunteers Table (Gate Scanner Accounts)
@@ -359,7 +362,15 @@ app.get("/api/events", (req, res) => {
                 rules,
                 created_at
             FROM events
-            ORDER BY id ASC
+            ORDER BY 
+                CASE 
+                    WHEN status = 'active' THEN 1 
+                    WHEN status = 'upcoming' THEN 2 
+                    WHEN status = 'closed' THEN 3 
+                    WHEN status = 'past' THEN 4 
+                    ELSE 5 
+                END ASC,
+                id DESC
         `).all();
 
         res.json({
@@ -1486,6 +1497,7 @@ app.get("/api/admin/registrations", requireAdmin, (req, res) => {
                 e.title AS event_title,
                 r.registration_id,
                 r.name,
+                r.email,
                 r.college_id,
                 r.department,
                 r.academic_year,
@@ -1506,6 +1518,7 @@ app.get("/api/admin/registrations", requireAdmin, (req, res) => {
             LEFT JOIN events e ON e.id = r.event_id
             WHERE (
                 r.name LIKE ?
+                OR COALESCE(r.email, '') LIKE ?
                 OR r.college_id LIKE ?
                 OR COALESCE(r.registration_id, '') LIKE ?
                 OR r.mobile LIKE ?
@@ -1513,6 +1526,7 @@ app.get("/api/admin/registrations", requireAdmin, (req, res) => {
         `;
 
         const params = [
+            `%${search}%`,
             `%${search}%`,
             `%${search}%`,
             `%${search}%`,
@@ -1604,6 +1618,7 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
         const studentDetails = {
             id: student.id,
             name: student.name,
+            email: student.email || "N/A",
             collegeId: student.college_id,
             department: student.department,
             academicYear: student.academic_year,
@@ -1739,6 +1754,7 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
                 r.id,
                 e.title AS event_title,
                 r.name,
+                r.email,
                 r.college_id,
                 r.department,
                 r.academic_year,
@@ -1777,6 +1793,7 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
             "Sr No": index + 1,
             "Event": r.event_title || "General Event",
             "Full Name": r.name,
+            "Email Address": r.email || "N/A",
             "College ID": r.college_id,
             "Department": r.department,
             "Academic Year": r.academic_year,
@@ -1843,6 +1860,7 @@ app.get("/api/admin/payments", requireAdmin, (req, res) => {
         if (search) {
             whereClauses.push(`(
                 r.name LIKE ?
+                OR COALESCE(r.email, '') LIKE ?
                 OR r.college_id LIKE ?
                 OR r.mobile LIKE ?
                 OR COALESCE(r.payu_mihpayid, '') LIKE ?
@@ -1854,7 +1872,7 @@ app.get("/api/admin/payments", requireAdmin, (req, res) => {
                 OR COALESCE(r.registration_id, '') LIKE ?
             )`);
             const s = `%${search}%`;
-            params.push(s, s, s, s, s, s, s, s, s, s);
+            params.push(s, s, s, s, s, s, s, s, s, s, s);
         }
 
         const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
@@ -1867,6 +1885,7 @@ app.get("/api/admin/payments", requireAdmin, (req, res) => {
                 e.fee_paise,
                 r.registration_id,
                 r.name,
+                r.email,
                 r.college_id,
                 r.department,
                 r.academic_year,
@@ -1965,6 +1984,7 @@ app.get("/api/admin/export-payments", requireAdmin, (req, res) => {
                 r.id,
                 e.title AS event_title,
                 r.name,
+                r.email,
                 r.college_id,
                 r.department,
                 r.academic_year,
@@ -1995,6 +2015,7 @@ app.get("/api/admin/export-payments", requireAdmin, (req, res) => {
             "Sr No": index + 1,
             "Event Title": r.event_title || "General Event",
             "Student Name": r.name,
+            "Email Address": r.email || "N/A",
             "College ID": r.college_id,
             "Mobile Number": r.mobile,
             "Department": r.department,
@@ -2042,27 +2063,33 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
         const {
             eventId,
             name,
+            email,
             collegeId,
             department,
             year,
             mobile
         } = req.body || {};
 
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
         if (
             !eventId ||
             !name?.trim() ||
+            !email?.trim() ||
+            !emailRegex.test(email.trim()) ||
             !collegeId?.trim() ||
             !department?.trim() ||
             !year?.trim() ||
             !/^[0-9]{10}$/.test(mobile || "")
         ) {
             return res.status(400).json({
-                error: "Please select an event and fill all details with a 10-digit mobile number."
+                error: "Please select an event and fill all details including a valid email address and 10-digit mobile number."
             });
         }
 
         if (
             name.trim().length > 100 ||
+            email.trim().length > 120 ||
             collegeId.trim().length > 50 ||
             department.trim().length > 100 ||
             year.trim().length > 20
@@ -2129,10 +2156,13 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
             });
             const qrImage = await QRCode.toDataURL(qrData);
 
+            const cleanEmail = email.trim().toLowerCase();
+
             if (existingRegistration) {
                 db.prepare(`
                     UPDATE registrations
                     SET name = ?,
+                        email = ?,
                         department = ?,
                         academic_year = ?,
                         mobile = ?,
@@ -2145,6 +2175,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
                     WHERE id = ?
                 `).run(
                     name.trim(),
+                    cleanEmail,
                     department.trim(),
                     year.trim(),
                     mobile.trim(),
@@ -2156,13 +2187,13 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
             } else {
                 db.prepare(`
                     INSERT INTO registrations (
-                        event_id, name, college_id, department, academic_year, mobile,
+                        event_id, name, email, college_id, department, academic_year, mobile,
                         registration_id, qr_number, qr_token, payment_amount,
                         payment_currency, payment_method, payment_status, paid_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'INR', 'free', 'paid', CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'INR', 'free', 'paid', CURRENT_TIMESTAMP)
                 `).run(
-                    targetEvent.id, name.trim(), normalizedCollegeId, department.trim(),
+                    targetEvent.id, name.trim(), cleanEmail, normalizedCollegeId, department.trim(),
                     year.trim(), mobile.trim(), registrationId, qrNumber, qrToken
                 );
             }
@@ -2174,6 +2205,11 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
                 qrNumber,
                 qrImage,
                 eventTitle: targetEvent.title,
+                name: name.trim(),
+                email: cleanEmail,
+                collegeId: normalizedCollegeId,
+                department: department.trim(),
+                academicYear: year.trim(),
                 message: "Registration confirmed! Your free entry pass is ready."
             });
         }
@@ -2201,7 +2237,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
         const udf3 = year.trim();
         const udf4 = String(targetEvent.id);
         const udf5 = "";
-        const studentEmail = `${normalizedCollegeId.toLowerCase()}@student.jspm.edu.in`;
+        const studentEmail = email.trim().toLowerCase();
 
         const { hash } = generatePayURequestHash({
             key,
@@ -2222,6 +2258,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
             db.prepare(`
                 UPDATE registrations
                 SET name = ?,
+                    email = ?,
                     department = ?,
                     academic_year = ?,
                     mobile = ?,
@@ -2231,7 +2268,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
                     created_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             `).run(
-                name.trim(), department.trim(), year.trim(), mobile.trim(),
+                name.trim(), studentEmail, department.trim(), year.trim(), mobile.trim(),
                 txnid, feeAmount, existingRegistration.id
             );
 
@@ -2263,12 +2300,12 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
 
         const insertResult = db.prepare(`
             INSERT INTO registrations (
-                event_id, name, college_id, department, academic_year,
+                event_id, name, email, college_id, department, academic_year,
                 mobile, payu_txnid, payment_amount, payment_currency, payment_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'INR', 'pending')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', 'pending')
         `).run(
-            targetEvent.id, name.trim(), normalizedCollegeId, department.trim(),
+            targetEvent.id, name.trim(), studentEmail, normalizedCollegeId, department.trim(),
             year.trim(), mobile.trim(), txnid, feeAmount
         );
 
@@ -2376,6 +2413,7 @@ app.post("/api/verify-payment", async (req, res) => {
                     qrNumber: registration.qr_number,
                     eventTitle: registration.event_title,
                     name: registration.name,
+                    email: registration.email,
                     collegeId: registration.college_id,
                     department: registration.department,
                     academicYear: registration.academic_year,
@@ -2435,6 +2473,7 @@ app.post("/api/verify-payment", async (req, res) => {
                 qrImage,
                 eventTitle: registration.event_title,
                 name: registration.name,
+                email: registration.email,
                 collegeId: registration.college_id,
                 department: registration.department,
                 academicYear: registration.academic_year,
@@ -2506,6 +2545,7 @@ app.post("/api/find-pass", findPassLimiter, async (req, res) => {
             });
             return {
                 name: p.name,
+                email: p.email,
                 collegeId: p.college_id,
                 department: p.department,
                 academicYear: p.academic_year,

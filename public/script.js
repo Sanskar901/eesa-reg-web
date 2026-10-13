@@ -93,15 +93,35 @@ function renderEventCards() {
     const gridEl = document.getElementById('eventsGrid');
     if (!gridEl) return;
 
-    const filtered = allEvents.filter(ev => {
-        if (activeFilter === 'all') return true;
-        return ev.category?.toLowerCase() === activeFilter.toLowerCase();
-    });
+    let filtered;
+    if (activeFilter === 'all') {
+        // Show active and upcoming events first, past events at the end
+        filtered = [...allEvents].sort((a, b) => {
+            const isAPast = (a.status === 'past' || a.status === 'closed');
+            const isBPast = (b.status === 'past' || b.status === 'closed');
+            if (isAPast && !isBPast) return 1;
+            if (!isAPast && isBPast) return -1;
+            return b.id - a.id;
+        });
+    } else if (activeFilter === 'past') {
+        // Show only concluded or past events
+        filtered = allEvents.filter(ev => ev.status === 'past' || ev.status === 'closed');
+    } else {
+        // Show filtered category with active events on top
+        filtered = allEvents.filter(ev => ev.category?.toLowerCase() === activeFilter.toLowerCase())
+            .sort((a, b) => {
+                const isAPast = (a.status === 'past' || a.status === 'closed');
+                const isBPast = (b.status === 'past' || b.status === 'closed');
+                if (isAPast && !isBPast) return 1;
+                if (!isAPast && isBPast) return -1;
+                return b.id - a.id;
+            });
+    }
 
     if (filtered.length === 0) {
         gridEl.innerHTML = `
             <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #94a3b8;">
-                <p style="font-size: 16px;">No events currently listed in this category.</p>
+                <p style="font-size: 16px;">${activeFilter === 'past' ? 'No past events found yet. Concluded events will appear here.' : 'No events currently listed in this category.'}</p>
             </div>
         `;
         return;
@@ -109,11 +129,31 @@ function renderEventCards() {
 
     gridEl.innerHTML = filtered.map(ev => {
         const feeText = ev.fee_paise === 0 ? 'Free Entry' : `₹${ev.fee_rupees}.00`;
-        const statusClass = ev.status === 'active' ? 'active' : (ev.status === 'upcoming' ? 'upcoming' : 'closed');
-        const statusLabel = ev.status === 'active' ? 'Registrations Open' : (ev.status === 'upcoming' ? 'Upcoming' : 'Closed');
+        const isPast = ev.status === 'past';
+        const isClosed = ev.status === 'closed';
+        const isUpcoming = ev.status === 'upcoming';
+        const isPastOrClosed = isPast || isClosed;
+
+        let statusClass = 'active';
+        let statusLabel = 'Registrations Open';
+        let btnText = 'View Details & Register ➔';
+
+        if (isPast) {
+            statusClass = 'past';
+            statusLabel = 'Past Event • Concluded';
+            btnText = 'Event Concluded ➔';
+        } else if (isClosed) {
+            statusClass = 'closed';
+            statusLabel = 'Registrations Closed';
+            btnText = 'Registrations Closed ➔';
+        } else if (isUpcoming) {
+            statusClass = 'upcoming';
+            statusLabel = 'Upcoming';
+            btnText = 'Preview Details ➔';
+        }
 
         return `
-            <div class="event-card" data-event-id="${ev.id}">
+            <div class="event-card ${isPastOrClosed ? 'card-past' : ''}" data-event-id="${ev.id}">
                 <div>
                     <div class="event-card-top">
                         <span class="event-category-badge">${escapeHtml(ev.category || 'Event')}</span>
@@ -137,8 +177,8 @@ function renderEventCards() {
 
                 <div class="event-card-bottom">
                     <span class="event-price">${feeText}</span>
-                    <button type="button" class="btn-event-action" onclick="openEventDetails(${ev.id})">
-                        View Details & Register ➔
+                    <button type="button" class="btn-event-action ${isPastOrClosed ? 'btn-past' : ''}" onclick="openEventDetails(${ev.id})">
+                        ${btnText}
                     </button>
                 </div>
             </div>
@@ -156,21 +196,28 @@ function openEventDetails(eventId) {
 
     const modalContent = document.getElementById('modalContent');
     const feeText = ev.fee_paise === 0 ? 'Free Entry' : `₹${ev.fee_rupees}.00`;
+    const isPast = ev.status === 'past';
     const isClosed = ev.status === 'closed';
+    const isUpcoming = ev.status === 'upcoming';
+    const isPastOrClosed = isPast || isClosed;
 
-    const eligibilityHtml = ev.restrict_eligibility === 1
-        ? `<div class="eligibility-notice restricted">
-                ⚠️ <strong>Restricted Eligibility:</strong> This event is limited to pre-approved eligible College IDs uploaded by the EESA committee.
+    const eligibilityHtml = isPastOrClosed
+        ? `<div class="eligibility-notice" style="background:#f1f5f9; color:#475569; border-left:4px solid #94a3b8;">
+                📜 <strong>Event Concluded:</strong> This event is completed. Registrations are closed.
            </div>`
-        : `<div class="eligibility-notice open">
-                ✅ <strong>Open to All:</strong> Any enrolled college student with a valid College ID can register.
-           </div>`;
+        : (ev.restrict_eligibility === 1
+            ? `<div class="eligibility-notice restricted">
+                    ⚠️ <strong>Restricted Eligibility:</strong> This event is limited to pre-approved eligible College IDs uploaded by the EESA committee.
+               </div>`
+            : `<div class="eligibility-notice open">
+                    ✅ <strong>Open to All:</strong> Any enrolled college student with a valid College ID can register.
+               </div>`);
 
     modalContent.innerHTML = `
         <div class="modal-header">
             <span class="badge-tag">${escapeHtml(ev.category)}</span>
             <h3>${escapeHtml(ev.title)}</h3>
-            <span class="fee-badge-lg">Registration Fee: ${feeText}</span>
+            <span class="fee-badge-lg">${isPastOrClosed ? 'Status: Concluded' : `Registration Fee: ${feeText}`}</span>
         </div>
 
         <p class="modal-sub">${escapeHtml(ev.tagline || '')}</p>
@@ -201,15 +248,23 @@ function openEventDetails(eventId) {
         ` : ''}
 
         <div style="margin-top: 24px;">
-            ${isClosed ? `
-                <button type="button" class="btn-primary-block" disabled style="background:#475569;">
+            ${isPast ? `
+                <button type="button" class="btn-primary-block" disabled style="background:#475569; cursor:not-allowed;">
+                    Event Concluded • Registrations Closed
+                </button>
+            ` : (isClosed ? `
+                <button type="button" class="btn-primary-block" disabled style="background:#475569; cursor:not-allowed;">
                     Registrations are Closed for this Event
+                </button>
+            ` : (isUpcoming ? `
+                <button type="button" class="btn-primary-block" disabled style="background:#1d4ed8; cursor:not-allowed;">
+                    Upcoming Event • Registrations Opening Soon
                 </button>
             ` : `
                 <button type="button" class="btn-primary-block" onclick="startRegistration(${ev.id})">
                     Register for "${escapeHtml(ev.title)}" (${feeText}) ➔
                 </button>
-            `}
+            `))}
         </div>
     `;
 
@@ -248,13 +303,20 @@ eventRegistrationForm.addEventListener('submit', async function (e) {
 
     const eventId = document.getElementById('formEventId').value;
     const name = document.getElementById('formStudentName').value.trim();
+    const email = document.getElementById('formEmail').value.trim().toLowerCase();
     const collegeId = document.getElementById('formCollegeId').value.trim();
     const department = document.getElementById('formDepartment').value;
     const year = document.getElementById('formYear').value;
     const mobile = document.getElementById('formMobile').value.trim();
 
-    if (!eventId || !name || !collegeId || !department || !year || !mobile) {
-        showStatus('regStatusMsg', 'Please complete all required fields.', 'error');
+    if (!eventId || !name || !email || !collegeId || !department || !year || !mobile) {
+        showStatus('regStatusMsg', 'Please complete all required fields including your email address.', 'error');
+        return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        showStatus('regStatusMsg', 'Please provide a valid email address (e.g. student@jspm.edu.in).', 'error');
         return;
     }
 
@@ -267,7 +329,7 @@ eventRegistrationForm.addEventListener('submit', async function (e) {
     showStatus('regStatusMsg', 'Verifying student eligibility and creating order...', 'info');
 
     try {
-        const payload = { eventId, name, collegeId, department, year, mobile };
+        const payload = { eventId, name, email, collegeId, department, year, mobile };
 
         const orderRes = await fetch('/api/create-order', {
             method: 'POST',
@@ -287,6 +349,7 @@ eventRegistrationForm.addEventListener('submit', async function (e) {
             closeModal('registrationModal');
             showTicketModal({
                 name,
+                email,
                 collegeId,
                 department,
                 academicYear: year,
@@ -381,6 +444,7 @@ eventRegistrationForm.addEventListener('submit', async function (e) {
                                 closeModal('registrationModal');
                                 showTicketModal({
                                     name: verifyResult.name || payload.name,
+                                    email: verifyResult.email || payload.email,
                                     collegeId: verifyResult.collegeId || payload.collegeId,
                                     department: verifyResult.department || payload.department,
                                     academicYear: verifyResult.academicYear || payload.year,
@@ -454,6 +518,12 @@ function showTicketModal(ticket) {
                         <span>STUDENT NAME</span>
                         <strong>${escapeHtml(ticket.name)}</strong>
                     </div>
+                    ${ticket.email ? `
+                    <div class="ticket-field">
+                        <span>EMAIL ADDRESS</span>
+                        <strong style="word-break: break-all; font-size:12px;">${escapeHtml(ticket.email)}</strong>
+                    </div>
+                    ` : ''}
                     <div class="ticket-field">
                         <span>COLLEGE ID / PRN</span>
                         <strong>${escapeHtml(ticket.collegeId)}</strong>

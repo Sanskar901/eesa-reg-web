@@ -588,6 +588,7 @@ tbody tr:hover {
 .badge-pill.active { background: var(--blue-subtle); color: var(--blue-light); border: 1px solid var(--blue-border); }
 .badge-pill.upcoming { background: rgba(255, 255, 255, 0.1); color: var(--white); border: 1px solid #525252; }
 .badge-pill.closed { background: var(--red-subtle); color: var(--red-light); border: 1px solid var(--red-border); }
+.badge-pill.past { background: rgba(148, 163, 184, 0.15); color: #94A3B8; border: 1px solid #475569; }
 
 .btn-action {
     background: var(--card-bg);

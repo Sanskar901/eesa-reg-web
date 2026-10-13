@@ -31,11 +31,11 @@
             </a>
 
             <nav class="nav-menu" id="navMenu" aria-label="Main Navigation">
-                <a href="#about" class="nav-link">About Us</a>
-                <a href="#quadrants" class="nav-link">Pillars</a>
-                <a href="#works" class="nav-link">Initiatives</a>
                 <a href="#events" class="nav-link active">Events Hub</a>
                 <a href="#passes" class="nav-link">Find My Pass</a>
+                <a href="#quadrants" class="nav-link">Pillars</a>
+                <a href="#about" class="nav-link">About Us</a>
+                <a href="#works" class="nav-link">Initiatives</a>
                 <a href="#contact" class="nav-link">Contact</a>
             </nav>
 
@@ -116,6 +116,50 @@
                         <span class="stat-label">Innovation Awards &amp; Cash Pools</span>
                     </div>
                 </div>
+            </div>
+        </section>
+
+        <!-- HERALDIC LAUREL DIVIDER -->
+        <div class="heraldic-divider" aria-hidden="true">
+            <span class="divider-line"></span>
+            <div class="divider-emblem">
+                <span class="emblem-shield">✦</span>
+                <span class="emblem-torch">📜</span>
+                <span class="emblem-shield">✦</span>
+            </div>
+            <span class="divider-line"></span>
+        </div>
+
+        <!-- EVENTS & LIVE UPDATES SECTION (NOW PROMINENTLY AT TOP OF WEBSITE) -->
+        <section id="events" class="section events-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-tag">CONVOCATIONS &amp; COMPETITIONS</span>
+                    <h3 class="section-title">Events Hub &amp; Live Registration</h3>
+                    <p class="section-desc">
+                        Select an active program to review details, eligibility criteria, and confirm registration with your official digital QR pass.
+                    </p>
+                </div>
+
+                <!-- Event Filter Bar (Includes Dedicated Past Events Tab) -->
+                <div class="filter-bar">
+                    <button class="filter-btn active" data-filter="all" onclick="filterEvents('all', this)">All Programs</button>
+                    <button class="filter-btn" data-filter="Technical" onclick="filterEvents('Technical', this)">Technical</button>
+                    <button class="filter-btn" data-filter="Cultural" onclick="filterEvents('Cultural', this)">Cultural</button>
+                    <button class="filter-btn" data-filter="Workshop" onclick="filterEvents('Workshop', this)">Workshops</button>
+                    <button class="filter-btn" data-filter="Hackathon" onclick="filterEvents('Hackathon', this)">Hackathons</button>
+                    <button class="filter-btn" data-filter="Competition" onclick="filterEvents('Competition', this)">Competitions</button>
+                    <button class="filter-btn filter-past-btn" data-filter="past" onclick="filterEvents('past', this)">📜 Past Events</button>
+                </div>
+
+                <!-- Events Loading State -->
+                <div id="eventsLoading" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Connecting to academic database and fetching active events...</p>
+                </div>
+
+                <!-- Dynamic Events Grid -->
+                <div id="eventsGrid" class="events-grid hidden"></div>
             </div>
         </section>
 
@@ -381,49 +425,6 @@
             <span class="divider-line"></span>
             <div class="divider-emblem">
                 <span class="emblem-shield">✦</span>
-                <span class="emblem-torch">📜</span>
-                <span class="emblem-shield">✦</span>
-            </div>
-            <span class="divider-line"></span>
-        </div>
-
-        <!-- EVENTS & LIVE UPDATES SECTION (INTEGRATED LIVE BACKEND CARDS) -->
-        <section id="events" class="section events-section">
-            <div class="section-container">
-                <div class="section-header">
-                    <span class="section-tag">CONVOCATIONS &amp; COMPETITIONS</span>
-                    <h3 class="section-title">Events Hub &amp; Live Registration</h3>
-                    <p class="section-desc">
-                        Select a program to review details, eligibility criteria, and confirm registration with your official digital QR pass.
-                    </p>
-                </div>
-
-                <!-- Event Filter Bar -->
-                <div class="filter-bar">
-                    <button class="filter-btn active" data-filter="all" onclick="filterEvents('all', this)">All Programs</button>
-                    <button class="filter-btn" data-filter="Technical" onclick="filterEvents('Technical', this)">Technical</button>
-                    <button class="filter-btn" data-filter="Cultural" onclick="filterEvents('Cultural', this)">Cultural</button>
-                    <button class="filter-btn" data-filter="Workshop" onclick="filterEvents('Workshop', this)">Workshops</button>
-                    <button class="filter-btn" data-filter="Hackathon" onclick="filterEvents('Hackathon', this)">Hackathons</button>
-                    <button class="filter-btn" data-filter="Competition" onclick="filterEvents('Competition', this)">Competitions</button>
-                </div>
-
-                <!-- Events Loading State -->
-                <div id="eventsLoading" class="loading-state">
-                    <div class="spinner"></div>
-                    <p>Connecting to academic database and fetching active events...</p>
-                </div>
-
-                <!-- Dynamic Events Grid -->
-                <div id="eventsGrid" class="events-grid hidden"></div>
-            </div>
-        </section>
-
-        <!-- HERALDIC LAUREL DIVIDER -->
-        <div class="heraldic-divider" aria-hidden="true">
-            <span class="divider-line"></span>
-            <div class="divider-emblem">
-                <span class="emblem-shield">✦</span>
                 <span class="emblem-torch">🎟️</span>
                 <span class="emblem-shield">✦</span>
             </div>
@@ -458,6 +459,7 @@
                             🔍 Retrieve My Digital Passes
                         </button>
                     </form>
+                
 
                     <div id="lookupMessage" class="status-msg hidden"></div>
 
@@ -499,6 +501,11 @@
                     <input type="text" id="formStudentName" placeholder="e.g. Rahul Sharma" required autocomplete="name">
                 </div>
 
+                <div class="form-group">
+                    <label for="formEmail">Email Address <span class="req">*</span></label>
+                    <input type="email" id="formEmail" placeholder="e.g. rahul.sharma@jspm.edu.in" required autocomplete="email">
+                </div>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="formCollegeId">College ID / PRN <span class="req">*</span></label>
@@ -518,6 +525,7 @@
                             <option value="">Select Department</option>
                             <option value="ENTC">E&amp;TC Engineering</option>
                             <option value="Computer">Computer Engineering</option>
+                              <option value="Electrical">Electrical Engineering</option>
                             <option value="IT">Information Technology</option>
                             <option value="Mechanical">Mechanical Engineering</option>
                             <option value="Civil">Civil Engineering</option>

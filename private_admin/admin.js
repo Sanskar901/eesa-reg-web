@@ -419,6 +419,7 @@ gateVerifyForm.addEventListener("submit", async (e) => {
 
         gateStudentDetails.innerHTML = `
             <div><strong>Student:</strong> ${escapeHtml(res.student.name)}</div>
+            ${res.student.email ? `<div><strong>Email:</strong> ${escapeHtml(res.student.email)}</div>` : ''}
             <div><strong>College ID:</strong> ${escapeHtml(res.student.collegeId)}</div>
             <div><strong>Event:</strong> ${escapeHtml(res.student.eventTitle)}</div>
             <div><strong>Dept / Year:</strong> ${escapeHtml(res.student.department)} (${escapeHtml(res.student.academicYear)})</div>
@@ -491,7 +492,10 @@ async function loadRegistrations() {
 
             return `
                 <tr>
-                    <td><strong>${escapeHtml(s.name)}</strong></td>
+                    <td>
+                        <strong>${escapeHtml(s.name)}</strong>
+                        ${s.email ? `<br><small style="color:#60a5fa">${escapeHtml(s.email)}</small>` : ''}
+                    </td>
                     <td>${escapeHtml(s.college_id)}</td>
                     <td><strong>${escapeHtml(s.event_title || 'General Event')}</strong></td>
                     <td>${escapeHtml(s.department)} (${escapeHtml(s.academic_year)})</td>
@@ -1002,6 +1006,13 @@ function renderGateResult({ statusType, messageTitle, messageDesc, student, code
             <div class="gate-detail-val">${escapeHtml(student.mobile)}</div>
         </div>
 
+        ${student.email ? `
+        <div class="gate-detail-cell">
+            <div class="gate-detail-label">Email Address</div>
+            <div class="gate-detail-val" style="word-break:break-all; font-size:12px;">${escapeHtml(student.email)}</div>
+        </div>
+        ` : ''}
+
         <div class="gate-detail-cell">
             <div class="gate-detail-label">Bank UTR / Transaction No</div>
             <div class="gate-detail-val mono">
@@ -1253,6 +1264,7 @@ async function loadPayments() {
                     <td>
                         <strong>${escapeHtml(p.name)}</strong><br>
                         <small style="color:#94a3b8">${escapeHtml(p.college_id)} • ${escapeHtml(p.mobile)}</small>
+                        ${p.email ? `<br><small style="color:#60a5fa">${escapeHtml(p.email)}</small>` : ''}
                     </td>
                     <td><strong>${escapeHtml(p.event_title || 'General Event')}</strong></td>
                     <td>
