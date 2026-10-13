@@ -6,7 +6,22 @@ let activeFilter = 'all';
 document.addEventListener('DOMContentLoaded', () => {
     loadEvents();
     initMobileNav();
+    initPayUSdk();
 });
+
+async function initPayUSdk() {
+    try {
+        const res = await fetch('/api/payu/config');
+        if (!res.ok) return;
+        const data = await res.json();
+        const scriptEl = document.getElementById('payuBoltScript');
+        if (scriptEl && data.boltScriptUrl && scriptEl.src !== data.boltScriptUrl) {
+            scriptEl.src = data.boltScriptUrl;
+        }
+    } catch (e) {
+        // Fallback silently if offline or blocked
+    }
+}
 
 function initMobileNav() {
     const toggleBtn = document.getElementById('navMobileToggle');
