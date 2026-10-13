@@ -31,6 +31,11 @@ app.use(express.json({
     }
 }));
 
+app.use(express.urlencoded({
+    extended: true,
+    limit: "100kb"
+}));
+
 // ========================================
 // RATE LIMITING UTILITIES
 // ========================================
@@ -207,6 +212,11 @@ app.get(["/eesa-admin.js", `${ADMIN_PATH}/admin.js`], (req, res) => {
 // Serve Volunteer Scanner Portal
 app.get(["/volunteer", "/volunteer/", "/gate", "/scanner"], (req, res) => {
     res.sendFile(path.join(__dirname, "public", "volunteer.html"));
+});
+
+// Serve PayU Gateway Test Lab & Demo Workbench
+app.get(["/payu-demo", "/payu-demo/", "/demo/payu"], (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "payu-demo.html"));
 });
 
 // 1. Events Table
@@ -2627,6 +2637,467 @@ app.post("/api/find-pass", findPassLimiter, async (req, res) => {
     } catch (error) {
         console.error("Find pass error:", error.message);
         res.status(500).json({ success: false, message: "Error retrieving passes: " + error.message });
+    }
+});
+
+// ========================================
+// PAYU INDIA PAYMENT GATEWAY (TEST & DEMO SUITE)
+// ========================================
+
+const PAYU_TEST_URL = "https://test.payu.in/_payment";
+const PAYU_PROD_URL = "https://secure.payu.in/_payment";
+
+// Helper to determine key & salt
+function resolvePayUCredentials(customKey, customSalt) {
+    const key = (customKey || process.env.PAYU_MERCHANT_KEY || "gtKFFx").trim();
+    const salt = (customSalt || process.env.PAYU_MERCHANT_SALT || "eCwWELxi").trim();
+    const env = (process.env.PAYU_ENV || "test").toLowerCase();
+    const actionUrl = (env === "prod" || env === "production") ? PAYU_PROD_URL : PAYU_TEST_URL;
+    return { key, salt, env, actionUrl };
+}
+
+// SHA-512 Request Hash calculation
+// Formula: sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt)
+function generatePayURequestHash({ key, txnid, amount, productinfo, firstname, email, udf1 = "", udf2 = "", udf3 = "", udf4 = "", udf5 = "", salt }) {
+    const hashString = `${key}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|${udf1}|${udf2}|${udf3}|${udf4}|${udf5}||||||${salt}`;
+    const hash = crypto.createHash("sha512").update(hashString).digest("hex").toLowerCase();
+    return { hash, hashString };
+}
+
+// SHA-512 Response Hash verification
+// Formula: sha512(salt|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+// Or with additionalCharges: sha512(additionalCharges|salt|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+function verifyPayUResponseHash(params, salt) {
+    const {
+        key = "",
+        txnid = "",
+        amount = "",
+        productinfo = "",
+        firstname = "",
+        email = "",
+        status = "",
+        udf1 = "",
+        udf2 = "",
+        udf3 = "",
+        udf4 = "",
+        udf5 = "",
+        additionalCharges = "",
+        hash = ""
+    } = params;
+
+    let reverseString;
+    if (additionalCharges) {
+        reverseString = `${additionalCharges}|${salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${key}`;
+    } else {
+        reverseString = `${salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${key}`;
+    }
+
+    const calculatedHash = crypto.createHash("sha512").update(reverseString).digest("hex").toLowerCase();
+    const receivedHash = (hash || "").toLowerCase();
+    const isValid = calculatedHash.length > 0 && calculatedHash === receivedHash;
+
+    return {
+        isValid,
+        calculatedHash,
+        receivedHash,
+        reverseString
+    };
+}
+
+// Config endpoint: Returns current PayU configuration state
+app.get("/api/payu/config", (req, res) => {
+    const hasKey = !!process.env.PAYU_MERCHANT_KEY;
+    const hasSalt = !!process.env.PAYU_MERCHANT_SALT;
+    const env = (process.env.PAYU_ENV || "test").toLowerCase();
+
+    res.json({
+        configured: hasKey && hasSalt,
+        env,
+        key: process.env.PAYU_MERCHANT_KEY || "gtKFFx",
+        hasSalt,
+        actionUrl: (env === "prod" || env === "production") ? PAYU_PROD_URL : PAYU_TEST_URL,
+        boltScriptUrl: (env === "prod" || env === "production")
+            ? "https://jssdk.payu.in/bolt/bolt.min.js" 
+            : "https://jssdk-uat.payu.in/bolt/bolt.min.js"
+    });
+});
+
+// Endpoint: Generate PayU transaction parameters and SHA-512 request hash
+app.post("/api/payu/create-payment", async (req, res) => {
+    try {
+        const {
+            amount,
+            productinfo,
+            firstname,
+            email,
+            phone,
+            collegeId = "",
+            department = "",
+            academicYear = "",
+            customKey,
+            customSalt,
+            mode = "dropout"
+        } = req.body || {};
+
+        if (!amount || !productinfo || !firstname || !email || !phone) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing mandatory PayU parameters: amount, productinfo, firstname, email, phone."
+            });
+        }
+
+        const numericAmount = parseFloat(amount);
+        if (isNaN(numericAmount) || numericAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid transaction amount."
+            });
+        }
+
+        const formattedAmount = numericAmount.toFixed(2);
+        const { key, salt, env, actionUrl } = resolvePayUCredentials(customKey, customSalt);
+
+        // Generate unique transaction ID
+        const txnid = "PAYU_" + Date.now() + "_" + crypto.randomBytes(3).toString("hex").toUpperCase();
+
+        const host = req.get("host");
+        const protocol = req.protocol || "http";
+        const surl = `${protocol}://${host}/api/payu/callback`;
+        const furl = `${protocol}://${host}/api/payu/callback`;
+
+        const udf1 = (collegeId || "").trim();
+        const udf2 = (department || "").trim();
+        const udf3 = (academicYear || "").trim();
+        const udf4 = "EESA_DEMO";
+        const udf5 = "";
+
+        const { hash, hashString } = generatePayURequestHash({
+            key,
+            txnid,
+            amount: formattedAmount,
+            productinfo: (productinfo || "").trim(),
+            firstname: (firstname || "").trim(),
+            email: (email || "").trim(),
+            udf1,
+            udf2,
+            udf3,
+            udf4,
+            udf5,
+            salt
+        });
+
+        res.json({
+            success: true,
+            key,
+            txnid,
+            amount: formattedAmount,
+            productinfo: (productinfo || "").trim(),
+            firstname: (firstname || "").trim(),
+            email: (email || "").trim(),
+            phone: (phone || "").trim(),
+            udf1,
+            udf2,
+            udf3,
+            udf4,
+            udf5,
+            surl,
+            furl,
+            hash,
+            hashString,
+            saltPreview: salt ? salt.slice(0, 3) + "***" : "N/A",
+            actionUrl,
+            env,
+            mode
+        });
+
+    } catch (err) {
+        console.error("PayU create payment error:", err);
+        res.status(500).json({ success: false, message: "Error generating PayU payment: " + err.message });
+    }
+});
+
+// Endpoint: Verify PayU payment response (for Bolt JS popup or frontend verification)
+app.post("/api/payu/verify-payment", async (req, res) => {
+    try {
+        const payload = req.body || {};
+        const { customSalt } = payload;
+        const { salt } = resolvePayUCredentials(payload.key, customSalt);
+
+        const verification = verifyPayUResponseHash(payload, salt);
+
+        const status = (payload.status || payload.txnStatus || "").toLowerCase();
+        const isSuccessful = verification.isValid && (status === "success" || status === "successful");
+
+        let demoPass = null;
+        if (isSuccessful) {
+            const registrationId = "EESA-PAYU-" + crypto.randomUUID().slice(0, 8).toUpperCase();
+            const qrNumber = "QR-PAYU-" + (payload.mihpayid || payload.txnid || Date.now());
+            const qrToken = crypto.randomBytes(24).toString("hex");
+
+            const qrData = JSON.stringify({
+                gateway: "PayU",
+                registrationId,
+                qrNumber,
+                token: qrToken,
+                txnid: payload.txnid,
+                mihpayid: payload.mihpayid,
+                amount: payload.amount,
+                verified: true
+            });
+            const qrImage = await QRCode.toDataURL(qrData);
+
+            demoPass = {
+                registrationId,
+                qrNumber,
+                qrImage,
+                name: payload.firstname || "Student",
+                collegeId: payload.udf1 || "N/A",
+                department: payload.udf2 || "E&TC",
+                academicYear: payload.udf3 || "2026",
+                eventTitle: payload.productinfo || "EESA Event",
+                amount: payload.amount,
+                txnid: payload.txnid,
+                mihpayid: payload.mihpayid || "N/A",
+                mode: payload.mode || "Online",
+                bankRefNum: payload.bank_ref_num || "N/A",
+                status: "PAID - VERIFIED"
+            };
+        }
+
+        res.json({
+            success: isSuccessful,
+            isValidHash: verification.isValid,
+            calculatedHash: verification.calculatedHash,
+            receivedHash: verification.receivedHash,
+            status,
+            txnid: payload.txnid,
+            mihpayid: payload.mihpayid || "N/A",
+            pass: demoPass,
+            message: isSuccessful
+                ? "Payment successfully validated and authenticated with SHA-512 security hash!"
+                : verification.isValid
+                    ? `Payment status is '${status}' (not completed).`
+                    : "Security alert: Response hash verification failed! Data may have been intercepted or salt is incorrect."
+        });
+
+    } catch (err) {
+        console.error("PayU verification error:", err);
+        res.status(500).json({ success: false, message: "Verification processing failed: " + err.message });
+    }
+});
+
+// Endpoint: Simulation of PayU Gateway response for testing without credentials
+app.post("/api/payu/simulate-gateway", async (req, res) => {
+    try {
+        const {
+            key = "gtKFFx",
+            txnid,
+            amount = "10.00",
+            productinfo = "Demo Item",
+            firstname = "Test Student",
+            email = "student@test.com",
+            phone = "9876543210",
+            udf1 = "",
+            udf2 = "",
+            udf3 = "",
+            udf4 = "",
+            udf5 = "",
+            salt = "eCwWELxi",
+            action = "success", // success, failure, cancel
+            mode = "UPI" // UPI, CC, DC, NB
+        } = req.body || {};
+
+        if (!txnid) {
+            return res.status(400).json({ success: false, message: "Transaction ID (txnid) is required." });
+        }
+
+        const mihpayid = "PAYU_SIM_" + Math.floor(1000000000 + Math.random() * 9000000000);
+        const bankRefNum = "BANK_REF_" + Math.floor(10000000 + Math.random() * 90000000);
+        const status = action === "success" ? "success" : action === "cancel" ? "cancel" : "failure";
+        const unmappedstatus = action === "success" ? "captured" : action === "cancel" ? "userCancelled" : "failed";
+
+        // Calculate authentic reverse hash as PayU would
+        const reverseString = `${salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${key}`;
+        const responseHash = crypto.createHash("sha512").update(reverseString).digest("hex").toLowerCase();
+
+        const simResponse = {
+            mihpayid,
+            mode,
+            status,
+            unmappedstatus,
+            key,
+            txnid,
+            amount,
+            productinfo,
+            firstname,
+            email,
+            phone,
+            udf1,
+            udf2,
+            udf3,
+            udf4,
+            udf5,
+            hash: responseHash,
+            bank_ref_num: bankRefNum,
+            bankcode: mode === "UPI" ? "UPI" : "TESTBANK",
+            error: action === "success" ? "E000" : "E101",
+            errorMessage: action === "success" ? "No Error" : "Transaction Failed",
+            field9: "Transaction Completed via PayU Simulator",
+            addedon: new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '')
+        };
+
+        res.json({
+            success: true,
+            simulated: true,
+            simResponse
+        });
+
+    } catch (err) {
+        console.error("Simulator error:", err);
+        res.status(500).json({ success: false, message: "Simulation error: " + err.message });
+    }
+});
+
+// Endpoint: HTTP POST Callback handler for PayU Hosted Checkout (surl & furl)
+app.post("/api/payu/callback", async (req, res) => {
+    try {
+        const payload = req.body || {};
+        const { salt } = resolvePayUCredentials(payload.key);
+        const verification = verifyPayUResponseHash(payload, salt);
+
+        const status = (payload.status || "").toLowerCase();
+        const isSuccess = verification.isValid && status === "success";
+
+        let qrImage = "";
+        let registrationId = "";
+
+        if (isSuccess) {
+            registrationId = "EESA-PAYU-" + crypto.randomUUID().slice(0, 8).toUpperCase();
+            const qrNumber = "QR-" + (payload.mihpayid || payload.txnid || Date.now());
+            const qrToken = crypto.randomBytes(24).toString("hex");
+
+            const qrData = JSON.stringify({
+                gateway: "PayU",
+                registrationId,
+                qrNumber,
+                token: qrToken,
+                txnid: payload.txnid,
+                mihpayid: payload.mihpayid,
+                amount: payload.amount
+            });
+            qrImage = await QRCode.toDataURL(qrData);
+        }
+
+        // Return an academic callback receipt page
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PayU Payment Callback • EESA JSPM</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: #0F172A; color: #E2E8F0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .receipt-card { background: #1E293B; border: 1px solid #334155; border-radius: 16px; max-width: 620px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); overflow: hidden; }
+        .receipt-header { padding: 28px 24px; text-align: center; background: ${isSuccess ? 'linear-gradient(135deg, #065F46 0%, #047857 100%)' : 'linear-gradient(135deg, #991B1B 0%, #B91C1C 100%)'}; }
+        .receipt-icon { font-size: 52px; margin-bottom: 12px; }
+        .receipt-title { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: #FFFFFF; }
+        .receipt-sub { font-size: 14px; opacity: 0.9; margin-top: 6px; }
+        .receipt-body { padding: 28px; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .badge-verified { background: #059669; color: #FFFFFF; }
+        .badge-danger { background: #DC2626; color: #FFFFFF; }
+        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; background: #0F172A; padding: 18px; border-radius: 12px; border: 1px solid #334155; }
+        .meta-item { display: flex; flex-direction: column; }
+        .meta-label { font-size: 11px; text-transform: uppercase; color: #94A3B8; font-weight: 600; letter-spacing: 0.5px; }
+        .meta-val { font-size: 14px; color: #F8FAFC; font-weight: 600; margin-top: 3px; word-break: break-all; }
+        .qr-section { text-align: center; background: #FFFFFF; color: #0F172A; padding: 20px; border-radius: 12px; margin: 20px 0; }
+        .qr-img { width: 180px; height: 180px; margin: 10px auto; display: block; border-radius: 8px; }
+        .qr-pass-title { font-weight: 700; font-size: 16px; color: #1F3B8C; }
+        .btn-group { display: flex; gap: 12px; margin-top: 24px; }
+        .btn { flex: 1; padding: 12px 18px; border-radius: 10px; font-weight: 600; text-align: center; text-decoration: none; font-size: 14px; cursor: pointer; border: none; transition: all 0.2s; }
+        .btn-gold { background: #F5B700; color: #0F172A; }
+        .btn-gold:hover { background: #D9A300; }
+        .btn-outline { background: transparent; border: 1px solid #475569; color: #E2E8F0; }
+        .btn-outline:hover { background: #334155; }
+        .hash-box { background: #0B1120; border: 1px solid #1E293B; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; color: #94A3B8; margin-top: 16px; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <div class="receipt-card">
+        <div class="receipt-header">
+            <div class="receipt-icon">${isSuccess ? '✅' : '❌'}</div>
+            <h1 class="receipt-title">${isSuccess ? 'Payment Successful' : 'Payment Failed / Rejected'}</h1>
+            <p class="receipt-sub">PayU India Hosted Payment Gateway Response</p>
+        </div>
+        <div class="receipt-body">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="badge ${verification.isValid ? 'badge-verified' : 'badge-danger'}">
+                    ${verification.isValid ? '✓ SHA-512 Security Hash Verified' : '✗ Security Hash Mismatch'}
+                </span>
+                <span style="font-size:12px; color:#94A3B8;">${new Date().toLocaleTimeString()}</span>
+            </div>
+
+            <div class="meta-grid">
+                <div class="meta-item">
+                    <span class="meta-label">Transaction ID</span>
+                    <span class="meta-val">${payload.txnid || 'N/A'}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">PayU Reference (mihpayid)</span>
+                    <span class="meta-val">${payload.mihpayid || 'N/A'}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Amount Paid</span>
+                    <span class="meta-val" style="color:#F5B700; font-size:16px;">₹ ${payload.amount || '0.00'}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Payment Mode</span>
+                    <span class="meta-val">${payload.mode || 'Online'}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Bank Ref Number</span>
+                    <span class="meta-val">${payload.bank_ref_num || 'N/A'}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Product / Event</span>
+                    <span class="meta-val">${payload.productinfo || 'N/A'}</span>
+                </div>
+            </div>
+
+            ${isSuccess && qrImage ? `
+            <div class="qr-section">
+                <div class="qr-pass-title">🎫 Official Digital Entry Pass (Demo)</div>
+                <p style="font-size:12px; color:#64748B;">Student: <strong>${payload.firstname || 'Student'}</strong> • Reg ID: <strong>${registrationId}</strong></p>
+                <img src="${qrImage}" alt="QR Entry Pass" class="qr-img">
+                <p style="font-size:11px; color:#475569;">Show this QR code at the registration gate or volunteer scanner.</p>
+            </div>
+            ` : ''}
+
+            <div class="hash-box">
+                <div><strong>Reverse Hash Verification:</strong></div>
+                <div style="margin: 4px 0;">Received Hash: ${verification.receivedHash || 'None'}</div>
+                <div>Calculated Hash: ${verification.calculatedHash}</div>
+                <div style="color:${verification.isValid ? '#10B981' : '#EF4444'}; margin-top:4px;">
+                    Match Verdict: ${verification.isValid ? 'MATCH (Authentic payload from PayU)' : 'MISMATCH (Tampered or incorrect salt)'}
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <a href="/payu-demo" class="btn btn-gold">← Return to PayU Test Lab</a>
+                <a href="/" class="btn btn-outline">Go to EESA Home</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>`;
+
+        res.send(html);
+
+    } catch (err) {
+        console.error("PayU callback error:", err);
+        res.status(500).send("<h3>Error processing PayU callback</h3><p>" + err.message + "</p><a href='/payu-demo'>Return to Test Lab</a>");
     }
 });
 
