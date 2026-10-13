@@ -1225,12 +1225,14 @@ async function loadPayments() {
             const statusBadge = `<span class="badge-pill ${isPaid ? 'active' : 'upcoming'}">${escapeHtml(p.payment_status.toUpperCase())}</span>`;
             const amountRupees = p.payment_amount ? (p.payment_amount / 100).toFixed(2) : "0.00";
 
-            const payIdHtml = p.razorpay_payment_id
-                ? `<div class="id-copy-cell"><span class="id-code pay-id">${escapeHtml(p.razorpay_payment_id)}</span><button type="button" class="btn-copy-id" onclick="copyIdText('${escapeHtml(p.razorpay_payment_id)}', 'Payment ID')" title="Copy Payment ID">Copy</button></div>`
+            const payIdVal = p.payu_mihpayid || p.razorpay_payment_id;
+            const payIdHtml = payIdVal
+                ? `<div class="id-copy-cell"><span class="id-code pay-id">${escapeHtml(payIdVal)}</span><button type="button" class="btn-copy-id" onclick="copyIdText('${escapeHtml(payIdVal)}', 'Payment ID')" title="Copy Payment ID">Copy</button></div>`
                 : `<span style="color:#64748b">—</span>`;
 
-            const orderIdHtml = p.razorpay_order_id
-                ? `<div class="id-copy-cell"><span class="id-code order-id">${escapeHtml(p.razorpay_order_id)}</span><button type="button" class="btn-copy-id" onclick="copyIdText('${escapeHtml(p.razorpay_order_id)}', 'Order ID')" title="Copy Order ID">Copy</button></div>`
+            const orderIdVal = p.payu_txnid || p.razorpay_order_id;
+            const orderIdHtml = orderIdVal
+                ? `<div class="id-copy-cell"><span class="id-code order-id">${escapeHtml(orderIdVal)}</span><button type="button" class="btn-copy-id" onclick="copyIdText('${escapeHtml(orderIdVal)}', 'Order / Txn ID')" title="Copy Order ID">Copy</button></div>`
                 : `<span style="color:#64748b">—</span>`;
 
             const utrHtml = (p.utr_number && p.utr_number !== "N/A")

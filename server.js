@@ -288,9 +288,12 @@ try { db.exec("ALTER TABLE registrations ADD COLUMN utr_number TEXT;"); } catch 
 try { db.exec("ALTER TABLE registrations ADD COLUMN payment_vpa TEXT;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN payment_bank TEXT;"); } catch (e) {}
 try { db.exec("ALTER TABLE registrations ADD COLUMN checked_in_by TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE registrations ADD COLUMN payu_txnid TEXT;"); } catch (e) {}
+try { db.exec("ALTER TABLE registrations ADD COLUMN payu_mihpayid TEXT;"); } catch (e) {}
 try {
     db.exec("DROP INDEX IF EXISTS idx_registrations_college_id;");
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_event_college ON registrations(event_id, college_id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_registrations_payu_txnid ON registrations(payu_txnid);");
 } catch (e) {}
 
 // 4. Volunteers Table (Gate Scanner Accounts)
@@ -1761,6 +1764,8 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
                 r.payment_status,
                 r.registration_id,
                 r.qr_number,
+                r.payu_txnid,
+                r.payu_mihpayid,
                 r.razorpay_order_id,
                 r.razorpay_payment_id,
                 r.utr_number,
@@ -1797,8 +1802,8 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
             "Payment Status": r.payment_status.toUpperCase(),
             "Registration ID": r.registration_id || "N/A",
             "QR Number": r.qr_number || "N/A",
-            "Razorpay Payment ID": r.razorpay_payment_id || "N/A",
-            "Razorpay Order ID": r.razorpay_order_id || "N/A",
+            "Payment ID / mihpayid": r.payu_mihpayid || r.razorpay_payment_id || "N/A",
+            "Order / Txn ID": r.payu_txnid || r.razorpay_order_id || "N/A",
             "Bank UTR / RRN / Trans No": r.utr_number || "N/A",
             "Amount (INR)": r.payment_amount ? (r.payment_amount / 100).toFixed(2) : "0.00",
             "Payment Mode": r.payment_method || "N/A",
@@ -1982,6 +1987,8 @@ app.get("/api/admin/export-payments", requireAdmin, (req, res) => {
                 r.payment_amount,
                 r.payment_currency,
                 r.payment_method,
+                r.payu_txnid,
+                r.payu_mihpayid,
                 r.razorpay_payment_id,
                 r.razorpay_order_id,
                 r.utr_number,
@@ -2008,8 +2015,8 @@ app.get("/api/admin/export-payments", requireAdmin, (req, res) => {
             "Academic Year": r.academic_year,
             "Amount (INR)": r.payment_amount ? (r.payment_amount / 100).toFixed(2) : "0.00",
             "Payment Status": (r.payment_status || "PENDING").toUpperCase(),
-            "Razorpay Payment ID": r.razorpay_payment_id || "N/A",
-            "Razorpay Order ID": r.razorpay_order_id || "N/A",
+            "Payment ID / mihpayid": r.payu_mihpayid || r.razorpay_payment_id || "N/A",
+            "Order / Txn ID": r.payu_txnid || r.razorpay_order_id || "N/A",
             "Bank UTR / RRN / Trans No": r.utr_number || "N/A",
             "Payment Mode": (r.payment_method || "N/A").toUpperCase(),
             "UPI VPA": r.payment_vpa || "N/A",
@@ -2185,19 +2192,44 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
             });
         }
 
-        // PAID EVENT (Razorpay Order Creation)
-        const razorpay = getRazorpay();
-        if (!razorpay) {
+        // PAID EVENT (PayU Hosted / Bolt Order Creation)
+        const rupeeAmount = (feeAmount / 100).toFixed(2);
+        const { key, salt, actionUrl, env } = resolvePayUCredentials();
+
+        if (!key || !salt) {
             return res.status(503).json({
-                error: "Razorpay credentials are not configured in .env."
+                error: "PayU credentials are not configured in .env."
             });
         }
 
-        const receipt = "eesa_" + crypto.randomUUID().slice(0, 18);
-        const order = await razorpay.orders.create({
-            amount: feeAmount,
-            currency: "INR",
-            receipt
+        // Generate unique PayU transaction ID
+        const txnid = "EESA_" + Date.now() + "_" + crypto.randomBytes(3).toString("hex").toUpperCase();
+
+        const host = req.get("host");
+        const protocol = req.protocol || "http";
+        const surl = `${protocol}://${host}/api/payu/callback`;
+        const furl = `${protocol}://${host}/api/payu/callback`;
+
+        const udf1 = normalizedCollegeId;
+        const udf2 = department.trim();
+        const udf3 = year.trim();
+        const udf4 = String(targetEvent.id);
+        const udf5 = "";
+        const studentEmail = `${normalizedCollegeId.toLowerCase()}@student.jspm.edu.in`;
+
+        const { hash } = generatePayURequestHash({
+            key,
+            txnid,
+            amount: rupeeAmount,
+            productinfo: targetEvent.title,
+            firstname: name.trim(),
+            email: studentEmail,
+            udf1,
+            udf2,
+            udf3,
+            udf4,
+            udf5,
+            salt
         });
 
         if (existingRegistration && existingRegistration.payment_status === "pending") {
@@ -2207,6 +2239,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
                     department = ?,
                     academic_year = ?,
                     mobile = ?,
+                    payu_txnid = ?,
                     razorpay_order_id = ?,
                     payment_amount = ?,
                     payment_currency = 'INR',
@@ -2214,14 +2247,30 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
                 WHERE id = ?
             `).run(
                 name.trim(), department.trim(), year.trim(), mobile.trim(),
-                order.id, feeAmount, existingRegistration.id
+                txnid, txnid, feeAmount, existingRegistration.id
             );
 
             return res.json({
-                orderId: order.id,
-                amount: order.amount,
-                currency: order.currency,
-                keyId: process.env.RAZORPAY_KEY_ID,
+                gateway: "payu",
+                key,
+                txnid,
+                orderId: txnid,
+                amount: rupeeAmount,
+                currency: "INR",
+                productinfo: targetEvent.title,
+                firstname: name.trim(),
+                email: studentEmail,
+                phone: mobile.trim(),
+                udf1,
+                udf2,
+                udf3,
+                udf4,
+                udf5,
+                surl,
+                furl,
+                hash,
+                actionUrl,
+                env,
                 eventTitle: targetEvent.title,
                 registrationRecord: existingRegistration.id
             });
@@ -2230,19 +2279,35 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
         const insertResult = db.prepare(`
             INSERT INTO registrations (
                 event_id, name, college_id, department, academic_year,
-                mobile, razorpay_order_id, payment_amount, payment_currency, payment_status
+                mobile, payu_txnid, razorpay_order_id, payment_amount, payment_currency, payment_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'INR', 'pending')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', 'pending')
         `).run(
             targetEvent.id, name.trim(), normalizedCollegeId, department.trim(),
-            year.trim(), mobile.trim(), order.id, feeAmount
+            year.trim(), mobile.trim(), txnid, txnid, feeAmount
         );
 
         res.json({
-            orderId: order.id,
-            amount: order.amount,
-            currency: order.currency,
-            keyId: process.env.RAZORPAY_KEY_ID,
+            gateway: "payu",
+            key,
+            txnid,
+            orderId: txnid,
+            amount: rupeeAmount,
+            currency: "INR",
+            productinfo: targetEvent.title,
+            firstname: name.trim(),
+            email: studentEmail,
+            phone: mobile.trim(),
+            udf1,
+            udf2,
+            udf3,
+            udf4,
+            udf5,
+            surl,
+            furl,
+            hash,
+            actionUrl,
+            env,
             eventTitle: targetEvent.title,
             registrationRecord: insertResult.lastInsertRowid
         });
@@ -2261,6 +2326,144 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
 // STEP 2: Verify payment and generate QR pass
 app.post("/api/verify-payment", async (req, res) => {
     try {
+        // ========================================
+        // 1. PAYU PAYMENT VERIFICATION
+        // ========================================
+        if (req.body.txnid || req.body.mihpayid || req.body.txnStatus) {
+            const payload = req.body || {};
+            const { salt } = resolvePayUCredentials(payload.key);
+            const verification = verifyPayUResponseHash(payload, salt);
+
+            if (!verification.isValid) {
+                return res.status(400).json({
+                    success: false,
+                    message: "PayU security hash verification failed. Tampered or unauthenticated transaction rejected."
+                });
+            }
+
+            const status = (payload.status || payload.txnStatus || "").toLowerCase();
+            if (status !== "success" && status !== "successful") {
+                return res.status(400).json({
+                    success: false,
+                    message: `Payment status is '${status}'. Registration pass cannot be generated.`
+                });
+            }
+
+            const registration = db.prepare(`
+                SELECT r.*, e.title AS event_title, e.fee_paise
+                FROM registrations r
+                LEFT JOIN events e ON e.id = r.event_id
+                WHERE r.payu_txnid = ? OR r.razorpay_order_id = ?
+            `).get(payload.txnid, payload.txnid);
+
+            if (!registration) {
+                return res.status(404).json({ success: false, message: "Registration record for this transaction was not found." });
+            }
+
+            // Replay defense: verify mihpayid was not used already
+            if (payload.mihpayid) {
+                const duplicatePayment = db.prepare(`
+                    SELECT id, registration_id
+                    FROM registrations
+                    WHERE (payu_mihpayid = ? OR razorpay_payment_id = ?) AND id != ?
+                `).get(payload.mihpayid, payload.mihpayid, registration.id);
+
+                if (duplicatePayment) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Duplicate payment claim rejected: PayU reference ${payload.mihpayid} was already credited to pass ${duplicatePayment.registration_id}.`
+                    });
+                }
+            }
+
+            // If already confirmed:
+            if (registration.payment_status === "paid") {
+                const qrData = JSON.stringify({
+                    eventId: registration.event_id,
+                    registrationId: registration.registration_id,
+                    qrNumber: registration.qr_number,
+                    token: registration.qr_token
+                });
+
+                return res.json({
+                    success: true,
+                    registrationId: registration.registration_id,
+                    qrNumber: registration.qr_number,
+                    eventTitle: registration.event_title,
+                    name: registration.name,
+                    collegeId: registration.college_id,
+                    department: registration.department,
+                    academicYear: registration.academic_year,
+                    qrImage: await QRCode.toDataURL(qrData),
+                    message: "Payment already verified and pass is ready."
+                });
+            }
+
+            // Generate registration IDs & QR Code
+            const registrationId = "EESA-" + crypto.randomUUID().slice(0, 8).toUpperCase();
+            const qrNumber = "QR-" + crypto.randomUUID().toUpperCase();
+            const qrToken = crypto.randomBytes(32).toString("hex");
+
+            const qrData = JSON.stringify({
+                eventId: registration.event_id,
+                registrationId,
+                qrNumber,
+                token: qrToken
+            });
+            const qrImage = await QRCode.toDataURL(qrData);
+
+            const utrNumber = payload.bank_ref_num || payload.bankcode || "N/A";
+            const paymentVpa = payload.field9 || payload.bankcode || "";
+            const paymentBank = payload.mode || "PayU";
+
+            db.prepare(`
+                UPDATE registrations
+                SET registration_id = ?,
+                    qr_number = ?,
+                    qr_token = ?,
+                    payu_txnid = ?,
+                    payu_mihpayid = ?,
+                    razorpay_order_id = COALESCE(razorpay_order_id, ?),
+                    razorpay_payment_id = COALESCE(razorpay_payment_id, ?),
+                    payment_status = 'paid',
+                    payment_method = ?,
+                    utr_number = ?,
+                    payment_vpa = ?,
+                    payment_bank = ?,
+                    paid_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND payment_status != 'paid'
+            `).run(
+                registrationId,
+                qrNumber,
+                qrToken,
+                payload.txnid,
+                payload.mihpayid || "N/A",
+                payload.txnid,
+                payload.mihpayid || "N/A",
+                paymentBank,
+                utrNumber,
+                paymentVpa,
+                paymentBank,
+                registration.id
+            );
+
+            return res.json({
+                success: true,
+                registrationId,
+                qrNumber,
+                qrImage,
+                eventTitle: registration.event_title,
+                name: registration.name,
+                collegeId: registration.college_id,
+                department: registration.department,
+                academicYear: registration.academic_year,
+                message: `Payment confirmed for "${registration.event_title}"! Entry pass is generated.`
+            });
+        }
+
+        // ========================================
+        // 2. RAZORPAY PAYMENT VERIFICATION (FALLBACK)
+        // ========================================
         const razorpay = getRazorpay();
         if (!razorpay) {
             return res.status(503).json({ success: false, message: "Razorpay credentials not configured." });
@@ -2970,10 +3173,81 @@ app.post("/api/payu/callback", async (req, res) => {
 
         let qrImage = "";
         let registrationId = "";
+        let qrNumber = "";
+        let matchedStudentName = payload.firstname || "Student";
+        let matchedEventTitle = payload.productinfo || "EESA Event";
 
-        if (isSuccess) {
+        let existing = null;
+        if (payload.txnid) {
+            existing = db.prepare(`
+                SELECT r.*, e.title AS event_title
+                FROM registrations r
+                LEFT JOIN events e ON e.id = r.event_id
+                WHERE r.payu_txnid = ? OR r.razorpay_order_id = ?
+            `).get(payload.txnid, payload.txnid);
+        }
+
+        if (isSuccess && existing) {
+            matchedStudentName = existing.name;
+            matchedEventTitle = existing.event_title || payload.productinfo;
+
+            if (existing.payment_status === "paid") {
+                registrationId = existing.registration_id;
+                qrNumber = existing.qr_number;
+                const qrData = JSON.stringify({
+                    eventId: existing.event_id,
+                    registrationId: existing.registration_id,
+                    qrNumber: existing.qr_number,
+                    token: existing.qr_token
+                });
+                qrImage = await QRCode.toDataURL(qrData);
+            } else {
+                registrationId = "EESA-" + crypto.randomUUID().slice(0, 8).toUpperCase();
+                qrNumber = "QR-" + crypto.randomUUID().toUpperCase();
+                const qrToken = crypto.randomBytes(32).toString("hex");
+
+                const qrData = JSON.stringify({
+                    eventId: existing.event_id,
+                    registrationId,
+                    qrNumber,
+                    token: qrToken
+                });
+                qrImage = await QRCode.toDataURL(qrData);
+
+                db.prepare(`
+                    UPDATE registrations
+                    SET registration_id = ?,
+                        qr_number = ?,
+                        qr_token = ?,
+                        payu_txnid = ?,
+                        payu_mihpayid = ?,
+                        razorpay_order_id = COALESCE(razorpay_order_id, ?),
+                        razorpay_payment_id = COALESCE(razorpay_payment_id, ?),
+                        payment_status = 'paid',
+                        payment_method = ?,
+                        utr_number = ?,
+                        payment_vpa = ?,
+                        payment_bank = ?,
+                        paid_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND payment_status != 'paid'
+                `).run(
+                    registrationId,
+                    qrNumber,
+                    qrToken,
+                    payload.txnid,
+                    payload.mihpayid || "N/A",
+                    payload.txnid,
+                    payload.mihpayid || "N/A",
+                    payload.mode || "PayU",
+                    payload.bank_ref_num || "N/A",
+                    payload.field9 || payload.bankcode || "",
+                    payload.mode || "PayU",
+                    existing.id
+                );
+            }
+        } else if (isSuccess) {
             registrationId = "EESA-PAYU-" + crypto.randomUUID().slice(0, 8).toUpperCase();
-            const qrNumber = "QR-" + (payload.mihpayid || payload.txnid || Date.now());
+            qrNumber = "QR-" + (payload.mihpayid || payload.txnid || Date.now());
             const qrToken = crypto.randomBytes(24).toString("hex");
 
             const qrData = JSON.stringify({

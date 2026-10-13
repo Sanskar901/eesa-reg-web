@@ -286,74 +286,123 @@ eventRegistrationForm.addEventListener('submit', async function (e) {
             return;
         }
 
-        // Case 2: Paid Event (Razorpay Checkout)
-        const razorpayOptions = {
-            key: orderData.keyId,
-            amount: orderData.amount,
-            currency: orderData.currency || 'INR',
-            name: 'EESA JSPM',
-            description: orderData.eventTitle || 'Event Registration Pass',
-            order_id: orderData.orderId,
-            prefill: {
-                name: payload.name,
-                contact: payload.mobile
-            },
-            theme: { color: '#4f46e5' },
-            handler: async function (paymentResponse) {
-                showStatus('regStatusMsg', 'Verifying payment with bank & creating digital pass...', 'info');
+        // Case 2: Paid Event (PayU Hosted Checkout - Bolt Modal with Hosted Fallback)
+        if (orderData.gateway === 'payu' || orderData.hash) {
+            showStatus('regStatusMsg', 'Connecting to PayU secure payment gateway...', 'info');
 
-                try {
-                    const verifyRes = await fetch('/api/verify-payment', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(paymentResponse)
-                    });
+            // Fallback function: submit hidden HTML form if Bolt modal is unavailable or blocked
+            function submitPayUHostedForm(data) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = data.actionUrl || 'https://test.payu.in/_payment';
+                form.style.display = 'none';
 
-                    const verifyResult = await verifyRes.json();
+                const fields = {
+                    key: data.key,
+                    txnid: data.txnid,
+                    amount: data.amount,
+                    productinfo: data.productinfo,
+                    firstname: data.firstname,
+                    email: data.email,
+                    phone: data.phone,
+                    surl: data.surl,
+                    furl: data.furl,
+                    hash: data.hash,
+                    udf1: data.udf1 || '',
+                    udf2: data.udf2 || '',
+                    udf3: data.udf3 || '',
+                    udf4: data.udf4 || '',
+                    udf5: data.udf5 || ''
+                };
 
-                    if (!verifyRes.ok || !verifyResult.success) {
-                        throw new Error(verifyResult.message || 'Payment verification failed.');
-                    }
-
-                    closeModal('registrationModal');
-                    showTicketModal({
-                        name: verifyResult.name || payload.name,
-                        collegeId: verifyResult.collegeId || payload.collegeId,
-                        department: verifyResult.department || payload.department,
-                        academicYear: verifyResult.academicYear || payload.year,
-                        eventTitle: verifyResult.eventTitle,
-                        registrationId: verifyResult.registrationId,
-                        qrNumber: verifyResult.qrNumber,
-                        qrImage: verifyResult.qrImage,
-                        checkedIn: false
-                    });
-                    eventRegistrationForm.reset();
-
-                } catch (verifyErr) {
-                    showStatus('regStatusMsg', verifyErr.message, 'error');
-                } finally {
-                    regSubmitBtn.disabled = false;
+                for (const [k, v] of Object.entries(fields)) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = k;
+                    input.value = v;
+                    form.appendChild(input);
                 }
-            },
-            modal: {
-                ondismiss: function () {
-                    showStatus(
-                        'regStatusMsg',
-                        'Payment window was closed. Your registration is saved as pending — you can retry anytime.',
-                        'info'
-                    );
-                    regSubmitBtn.disabled = false;
-                }
+
+                document.body.appendChild(form);
+                form.submit();
             }
-        };
 
-        const rzp = new Razorpay(razorpayOptions);
-        rzp.on('payment.failed', function (resp) {
-            showStatus('regStatusMsg', `Payment failed: ${resp.error?.description || 'Transaction declined'}.`, 'error');
-            regSubmitBtn.disabled = false;
-        });
+            if (typeof bolt !== 'undefined' && bolt.launch) {
+                try {
+                    bolt.launch({
+                        key: orderData.key,
+                        txnid: orderData.txnid,
+                        hash: orderData.hash,
+                        amount: orderData.amount,
+                        firstname: orderData.firstname,
+                        email: orderData.email,
+                        phone: orderData.phone,
+                        productinfo: orderData.productinfo,
+                        udf1: orderData.udf1 || '',
+                        udf2: orderData.udf2 || '',
+                        udf3: orderData.udf3 || '',
+                        udf4: orderData.udf4 || '',
+                        udf5: orderData.udf5 || '',
+                        surl: orderData.surl,
+                        furl: orderData.furl,
+                        mode: 'dropout'
+                    }, {
+                        responseHandler: async function (BOLT) {
+                            showStatus('regStatusMsg', 'Payment captured! Verifying signature with bank & creating digital pass...', 'info');
+                            const responsePayload = (BOLT && BOLT.response) ? BOLT.response : BOLT;
 
-        rzp.open();
+                            try {
+                                const verifyRes = await fetch('/api/verify-payment', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(responsePayload)
+                                });
+
+                                const verifyResult = await verifyRes.json();
+                                if (!verifyRes.ok || !verifyResult.success) {
+                                    throw new Error(verifyResult.message || 'Payment verification failed.');
+                                }
+
+                                closeModal('registrationModal');
+                                showTicketModal({
+                                    name: verifyResult.name || payload.name,
+                                    collegeId: verifyResult.collegeId || payload.collegeId,
+                                    department: verifyResult.department || payload.department,
+                                    academicYear: verifyResult.academicYear || payload.year,
+                                    eventTitle: verifyResult.eventTitle,
+                                    registrationId: verifyResult.registrationId,
+                                    qrNumber: verifyResult.qrNumber,
+                                    qrImage: verifyResult.qrImage,
+                                    checkedIn: false
+                                });
+                                eventRegistrationForm.reset();
+
+                            } catch (verifyErr) {
+                                showStatus('regStatusMsg', verifyErr.message, 'error');
+                            } finally {
+                                regSubmitBtn.disabled = false;
+                            }
+                        },
+                        catchException: function (BOLT) {
+                            console.warn('PayU Bolt window dismissed:', BOLT);
+                            showStatus(
+                                'regStatusMsg',
+                                'Payment window was closed. Your registration is saved as pending — you can retry anytime.',
+                                'info'
+                            );
+                            regSubmitBtn.disabled = false;
+                        }
+                    });
+                } catch (boltErr) {
+                    console.warn('PayU Bolt popup error, falling back to hosted redirect:', boltErr);
+                    submitPayUHostedForm(orderData);
+                }
+            } else {
+                // If Bolt SDK was not loaded, use hosted redirect
+                submitPayUHostedForm(orderData);
+            }
+            return;
+        }
 
     } catch (err) {
         showStatus('regStatusMsg', err.message, 'error');
