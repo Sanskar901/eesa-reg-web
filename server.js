@@ -1,7 +1,6 @@
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
-const Razorpay = require("razorpay");
 const Database = require("better-sqlite3");
 const QRCode = require("qrcode");
 const crypto = require("crypto");
@@ -310,25 +309,6 @@ db.exec(`
     );
 `);
 
-// Razorpay Client Helper (Supports both test and live credentials)
-function getRazorpay() {
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (
-        !keyId ||
-        !keySecret ||
-        (!keyId.startsWith("rzp_test_") && !keyId.startsWith("rzp_live_"))
-    ) {
-        return null;
-    }
-
-    return new Razorpay({
-        key_id: keyId,
-        key_secret: keySecret
-    });
-}
-
 function normalizeCollegeId(value) {
     return String(value || "")
         .trim()
@@ -448,7 +428,7 @@ app.get("/api/events/:idOrSlug", (req, res) => {
 app.get("/api/config", (req, res) => {
     res.json({
         success: true,
-        keyId: process.env.RAZORPAY_KEY_ID || ""
+        gateway: "payu"
     });
 });
 
@@ -1510,7 +1490,9 @@ app.get("/api/admin/registrations", requireAdmin, (req, res) => {
                 r.department,
                 r.academic_year,
                 r.mobile,
-                r.razorpay_payment_id,
+                r.payu_mihpayid,
+                r.payu_txnid,
+                COALESCE(r.payu_mihpayid, r.razorpay_payment_id) AS payment_id,
                 r.payment_amount,
                 r.payment_currency,
                 r.payment_method,
@@ -1630,8 +1612,8 @@ app.post("/api/admin/verify-entry", requireAdmin, (req, res) => {
             registrationId: student.registration_id || "N/A",
             paymentStatus: student.payment_status,
             paymentAmountRupees: student.payment_amount ? (student.payment_amount / 100).toFixed(2) : "0.00",
-            razorpayPaymentId: student.razorpay_payment_id || "N/A",
-            razorpayOrderId: student.razorpay_order_id || "N/A",
+            paymentId: student.payu_mihpayid || student.razorpay_payment_id || "N/A",
+            orderId: student.payu_txnid || student.razorpay_order_id || "N/A",
             utrNumber: student.utr_number || "N/A",
             paymentMethod: (student.payment_method || "N/A").toUpperCase(),
             checkedIn: student.checked_in === 1,
@@ -1802,8 +1784,8 @@ app.get("/api/admin/export-registrations", requireAdmin, (req, res) => {
             "Payment Status": r.payment_status.toUpperCase(),
             "Registration ID": r.registration_id || "N/A",
             "QR Number": r.qr_number || "N/A",
-            "Payment ID / mihpayid": r.payu_mihpayid || r.razorpay_payment_id || "N/A",
-            "Order / Txn ID": r.payu_txnid || r.razorpay_order_id || "N/A",
+            "Payment ID (PayU)": r.payu_mihpayid || r.razorpay_payment_id || "N/A",
+            "Transaction ID": r.payu_txnid || r.razorpay_order_id || "N/A",
             "Bank UTR / RRN / Trans No": r.utr_number || "N/A",
             "Amount (INR)": r.payment_amount ? (r.payment_amount / 100).toFixed(2) : "0.00",
             "Payment Mode": r.payment_method || "N/A",
@@ -1863,6 +1845,8 @@ app.get("/api/admin/payments", requireAdmin, (req, res) => {
                 r.name LIKE ?
                 OR r.college_id LIKE ?
                 OR r.mobile LIKE ?
+                OR COALESCE(r.payu_mihpayid, '') LIKE ?
+                OR COALESCE(r.payu_txnid, '') LIKE ?
                 OR COALESCE(r.razorpay_payment_id, '') LIKE ?
                 OR COALESCE(r.razorpay_order_id, '') LIKE ?
                 OR COALESCE(r.utr_number, '') LIKE ?
@@ -1870,7 +1854,7 @@ app.get("/api/admin/payments", requireAdmin, (req, res) => {
                 OR COALESCE(r.registration_id, '') LIKE ?
             )`);
             const s = `%${search}%`;
-            params.push(s, s, s, s, s, s, s, s);
+            params.push(s, s, s, s, s, s, s, s, s, s);
         }
 
         const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
@@ -1887,6 +1871,8 @@ app.get("/api/admin/payments", requireAdmin, (req, res) => {
                 r.department,
                 r.academic_year,
                 r.mobile,
+                r.payu_txnid,
+                r.payu_mihpayid,
                 r.razorpay_order_id,
                 r.razorpay_payment_id,
                 r.utr_number,
@@ -2015,8 +2001,8 @@ app.get("/api/admin/export-payments", requireAdmin, (req, res) => {
             "Academic Year": r.academic_year,
             "Amount (INR)": r.payment_amount ? (r.payment_amount / 100).toFixed(2) : "0.00",
             "Payment Status": (r.payment_status || "PENDING").toUpperCase(),
-            "Payment ID / mihpayid": r.payu_mihpayid || r.razorpay_payment_id || "N/A",
-            "Order / Txn ID": r.payu_txnid || r.razorpay_order_id || "N/A",
+            "Payment ID (PayU)": r.payu_mihpayid || r.razorpay_payment_id || "N/A",
+            "Transaction ID": r.payu_txnid || r.razorpay_order_id || "N/A",
             "Bank UTR / RRN / Trans No": r.utr_number || "N/A",
             "Payment Mode": (r.payment_method || "N/A").toUpperCase(),
             "UPI VPA": r.payment_vpa || "N/A",
@@ -2116,7 +2102,7 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
 
         // Check existing registration for this specific event
         const existingRegistration = db.prepare(`
-            SELECT id, payment_status, razorpay_order_id
+            SELECT id, payment_status, payu_txnid
             FROM registrations
             WHERE event_id = ? AND college_id = ?
         `).get(targetEvent.id, normalizedCollegeId);
@@ -2240,14 +2226,13 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
                     academic_year = ?,
                     mobile = ?,
                     payu_txnid = ?,
-                    razorpay_order_id = ?,
                     payment_amount = ?,
                     payment_currency = 'INR',
                     created_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             `).run(
                 name.trim(), department.trim(), year.trim(), mobile.trim(),
-                txnid, txnid, feeAmount, existingRegistration.id
+                txnid, feeAmount, existingRegistration.id
             );
 
             return res.json({
@@ -2279,12 +2264,12 @@ app.post("/api/create-order", createOrderLimiter, async (req, res) => {
         const insertResult = db.prepare(`
             INSERT INTO registrations (
                 event_id, name, college_id, department, academic_year,
-                mobile, payu_txnid, razorpay_order_id, payment_amount, payment_currency, payment_status
+                mobile, payu_txnid, payment_amount, payment_currency, payment_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', 'pending')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'INR', 'pending')
         `).run(
             targetEvent.id, name.trim(), normalizedCollegeId, department.trim(),
-            year.trim(), mobile.trim(), txnid, txnid, feeAmount
+            year.trim(), mobile.trim(), txnid, feeAmount
         );
 
         res.json({
@@ -2353,8 +2338,8 @@ app.post("/api/verify-payment", async (req, res) => {
                 SELECT r.*, e.title AS event_title, e.fee_paise
                 FROM registrations r
                 LEFT JOIN events e ON e.id = r.event_id
-                WHERE r.payu_txnid = ? OR r.razorpay_order_id = ?
-            `).get(payload.txnid, payload.txnid);
+                WHERE r.payu_txnid = ?
+            `).get(payload.txnid);
 
             if (!registration) {
                 return res.status(404).json({ success: false, message: "Registration record for this transaction was not found." });
@@ -2365,8 +2350,8 @@ app.post("/api/verify-payment", async (req, res) => {
                 const duplicatePayment = db.prepare(`
                     SELECT id, registration_id
                     FROM registrations
-                    WHERE (payu_mihpayid = ? OR razorpay_payment_id = ?) AND id != ?
-                `).get(payload.mihpayid, payload.mihpayid, registration.id);
+                    WHERE payu_mihpayid = ? AND id != ?
+                `).get(payload.mihpayid, registration.id);
 
                 if (duplicatePayment) {
                     return res.status(400).json({
@@ -2423,8 +2408,6 @@ app.post("/api/verify-payment", async (req, res) => {
                     qr_token = ?,
                     payu_txnid = ?,
                     payu_mihpayid = ?,
-                    razorpay_order_id = COALESCE(razorpay_order_id, ?),
-                    razorpay_payment_id = COALESCE(razorpay_payment_id, ?),
                     payment_status = 'paid',
                     payment_method = ?,
                     utr_number = ?,
@@ -2436,8 +2419,6 @@ app.post("/api/verify-payment", async (req, res) => {
                 registrationId,
                 qrNumber,
                 qrToken,
-                payload.txnid,
-                payload.mihpayid || "N/A",
                 payload.txnid,
                 payload.mihpayid || "N/A",
                 paymentBank,
@@ -2461,199 +2442,9 @@ app.post("/api/verify-payment", async (req, res) => {
             });
         }
 
-        // ========================================
-        // 2. RAZORPAY PAYMENT VERIFICATION (FALLBACK)
-        // ========================================
-        const razorpay = getRazorpay();
-        if (!razorpay) {
-            return res.status(503).json({ success: false, message: "Razorpay credentials not configured." });
-        }
-
-        const {
-            razorpay_order_id,
-            razorpay_payment_id,
-            razorpay_signature
-        } = req.body || {};
-
-        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-            return res.status(400).json({ success: false, message: "Missing payment verification parameters." });
-        }
-
-        if (!process.env.RAZORPAY_KEY_SECRET) {
-            return res.status(503).json({ success: false, message: "Server payment gateway secret is not configured." });
-        }
-
-        // HMAC SHA256 timing-safe verification
-        const expectedSignature = crypto
-            .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-            .update(razorpay_order_id + "|" + razorpay_payment_id)
-            .digest("hex");
-
-        const isSignatureValid = (
-            typeof razorpay_signature === "string" &&
-            razorpay_signature.length === expectedSignature.length &&
-            crypto.timingSafeEqual(Buffer.from(razorpay_signature), Buffer.from(expectedSignature))
-        );
-
-        if (!isSignatureValid) {
-            return res.status(400).json({ success: false, message: "Payment signature verification failed. Tampered or fraudulent data rejected." });
-        }
-
-        const registration = db.prepare(`
-            SELECT r.*, e.title AS event_title, e.fee_paise
-            FROM registrations r
-            LEFT JOIN events e ON e.id = r.event_id
-            WHERE r.razorpay_order_id = ?
-        `).get(razorpay_order_id);
-
-        if (!registration) {
-            return res.status(404).json({ success: false, message: "Order record not found." });
-        }
-
-        // Replay defense: Verify this payment ID was not already credited to another registration
-        const duplicatePayment = db.prepare(`
-            SELECT id, registration_id
-            FROM registrations
-            WHERE razorpay_payment_id = ? AND id != ?
-        `).get(razorpay_payment_id, registration.id);
-
-        if (duplicatePayment) {
-            return res.status(400).json({
-                success: false,
-                message: `Fraud prevention: Payment ID ${razorpay_payment_id} was already used for pass ${duplicatePayment.registration_id}. Duplicate payment claims are rejected.`
-            });
-        }
-
-        if (registration.payment_status === "paid") {
-            const qrData = JSON.stringify({
-                eventId: registration.event_id,
-                registrationId: registration.registration_id,
-                qrNumber: registration.qr_number,
-                token: registration.qr_token
-            });
-
-            return res.json({
-                success: true,
-                registrationId: registration.registration_id,
-                qrNumber: registration.qr_number,
-                eventTitle: registration.event_title,
-                qrImage: await QRCode.toDataURL(qrData),
-                message: "Payment already verified."
-            });
-        }
-
-        const payment = await razorpay.payments.fetch(razorpay_payment_id);
-        if (
-            payment.order_id !== razorpay_order_id ||
-            payment.amount !== registration.payment_amount ||
-            payment.currency !== "INR"
-        ) {
-            return res.status(400).json({ success: false, message: "Payment details do not match expected order. Fraudulent or mismatched transaction rejected." });
-        }
-
-        if (payment.status === "authorized") {
-            try {
-                await razorpay.payments.capture(razorpay_payment_id, registration.payment_amount, "INR");
-            } catch (e) {}
-        } else if (payment.status !== "captured") {
-            return res.status(400).json({
-                success: false,
-                message: `Payment status is '${payment.status}'. If money was deducted, contact committee coordinators.`
-            });
-        }
-
-        const registrationId = "EESA-" + crypto.randomUUID().slice(0, 8).toUpperCase();
-        const qrNumber = "QR-" + crypto.randomUUID().toUpperCase();
-        const qrToken = crypto.randomBytes(32).toString("hex");
-
-        const qrData = JSON.stringify({
-            eventId: registration.event_id,
-            registrationId,
-            qrNumber,
-            token: qrToken
-        });
-        const qrImage = await QRCode.toDataURL(qrData);
-
-        const utrNumber = (
-            payment.acquirer_data?.rrn ||
-            payment.acquirer_data?.upi_transaction_id ||
-            payment.acquirer_data?.bank_transaction_no ||
-            payment.acquirer_data?.auth_code ||
-            payment.acquirer_data?.arn ||
-            "N/A"
-        );
-        const paymentVpa = payment.vpa || "";
-        const paymentBank = payment.bank || payment.wallet || "";
-
-        const updateResult = db.prepare(`
-            UPDATE registrations
-            SET registration_id = ?,
-                qr_number = ?,
-                qr_token = ?,
-                razorpay_payment_id = ?,
-                payment_currency = ?,
-                payment_method = ?,
-                utr_number = ?,
-                payment_vpa = ?,
-                payment_bank = ?,
-                payment_status = 'paid',
-                paid_at = CURRENT_TIMESTAMP
-            WHERE razorpay_order_id = ? AND payment_status != 'paid'
-        `).run(
-            registrationId,
-            qrNumber,
-            qrToken,
-            payment.id,
-            payment.currency,
-            payment.method || "online",
-            utrNumber,
-            paymentVpa,
-            paymentBank,
-            razorpay_order_id
-        );
-
-        if (updateResult.changes === 0) {
-            // Already paid by a parallel request or server-to-server webhook
-            const fresh = db.prepare(`
-                SELECT r.*, e.title AS event_title
-                FROM registrations r
-                LEFT JOIN events e ON e.id = r.event_id
-                WHERE r.razorpay_order_id = ?
-            `).get(razorpay_order_id);
-
-            if (fresh && fresh.payment_status === "paid") {
-                const freshQrData = JSON.stringify({
-                    eventId: fresh.event_id,
-                    registrationId: fresh.registration_id,
-                    qrNumber: fresh.qr_number,
-                    token: fresh.qr_token
-                });
-                return res.json({
-                    success: true,
-                    registrationId: fresh.registration_id,
-                    qrNumber: fresh.qr_number,
-                    qrImage: await QRCode.toDataURL(freshQrData),
-                    eventTitle: fresh.event_title || registration.event_title,
-                    name: fresh.name,
-                    collegeId: fresh.college_id,
-                    department: fresh.department,
-                    academicYear: fresh.academic_year,
-                    message: `Payment confirmed for "${fresh.event_title || registration.event_title}"! Entry pass is generated.`
-                });
-            }
-        }
-
-        res.json({
-            success: true,
-            registrationId,
-            qrNumber,
-            qrImage,
-            eventTitle: registration.event_title,
-            name: registration.name,
-            collegeId: registration.college_id,
-            department: registration.department,
-            academicYear: registration.academic_year,
-            message: `Payment confirmed for "${registration.event_title}"! Entry pass is generated.`
+        return res.status(400).json({
+            success: false,
+            message: "Missing PayU payment response parameters. Please complete checkout through PayU."
         });
 
     } catch (error) {
@@ -2661,107 +2452,6 @@ app.post("/api/verify-payment", async (req, res) => {
         res.status(500).json({ success: false, message: "Verification failed: " + error.message });
     }
 });
-
-// ========================================
-// RAZORPAY SERVER-TO-SERVER WEBHOOK HANDLER
-// ========================================
-// Handles scenarios where bank captured money but user closed browser or network dropped before /api/verify-payment
-app.post("/api/razorpay-webhook", async (req, res) => {
-    try {
-        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET;
-        const signature = req.headers["x-razorpay-signature"];
-
-        if (!signature || !webhookSecret) {
-            console.warn("⚠️ Razorpay webhook call rejected: Missing signature header or webhook secret.");
-            return res.status(400).json({ error: "Missing webhook signature or secret" });
-        }
-
-        const rawPayload = req.rawBody ? req.rawBody.toString("utf8") : JSON.stringify(req.body);
-        const expectedSignature = crypto
-            .createHmac("sha256", webhookSecret)
-            .update(rawPayload)
-            .digest("hex");
-
-        let signatureValid = false;
-        try {
-            signatureValid = crypto.timingSafeEqual(
-                Buffer.from(signature, "utf8"),
-                Buffer.from(expectedSignature, "utf8")
-            );
-        } catch (e) {
-            signatureValid = false;
-        }
-
-        if (!signatureValid) {
-            console.warn("⚠️ Razorpay webhook rejected: Invalid HMAC signature.");
-            return res.status(400).json({ error: "Invalid webhook signature" });
-        }
-
-        const event = req.body?.event;
-        const payload = req.body?.payload;
-
-        if (event === "payment.captured" || event === "order.paid") {
-            const paymentEntity = payload?.payment?.entity;
-            const orderEntity = payload?.order?.entity;
-            const orderId = paymentEntity?.order_id || orderEntity?.id;
-
-            if (orderId) {
-                const reg = db.prepare("SELECT * FROM registrations WHERE razorpay_order_id = ?").get(orderId);
-                if (reg && reg.payment_status !== "paid") {
-                    const registrationId = "EESA-" + crypto.randomUUID().slice(0, 8).toUpperCase();
-                    const qrNumber = "QR-" + crypto.randomUUID().toUpperCase();
-                    const qrToken = crypto.randomBytes(32).toString("hex");
-
-                    const utrNumber = (
-                        paymentEntity?.acquirer_data?.rrn ||
-                        paymentEntity?.acquirer_data?.upi_transaction_id ||
-                        paymentEntity?.acquirer_data?.bank_transaction_no ||
-                        paymentEntity?.acquirer_data?.auth_code ||
-                        paymentEntity?.acquirer_data?.arn ||
-                        "N/A"
-                    );
-
-                    const updateResult = db.prepare(`
-                        UPDATE registrations
-                        SET registration_id = ?,
-                            qr_number = ?,
-                            qr_token = ?,
-                            razorpay_payment_id = ?,
-                            payment_currency = ?,
-                            payment_method = ?,
-                            utr_number = ?,
-                            payment_vpa = ?,
-                            payment_bank = ?,
-                            payment_status = 'paid',
-                            paid_at = CURRENT_TIMESTAMP
-                        WHERE razorpay_order_id = ? AND payment_status != 'paid'
-                    `).run(
-                        registrationId,
-                        qrNumber,
-                        qrToken,
-                        paymentEntity?.id || "webhook_captured",
-                        paymentEntity?.currency || "INR",
-                        paymentEntity?.method || "online",
-                        utrNumber,
-                        paymentEntity?.vpa || "",
-                        paymentEntity?.bank || paymentEntity?.wallet || "",
-                        orderId
-                    );
-
-                    if (updateResult.changes > 0) {
-                        console.log(`✅ [WEBHOOK] Successfully confirmed pass for order ${orderId} (${reg.name}, ${registrationId})`);
-                    }
-                }
-            }
-        }
-
-        return res.status(200).json({ status: "ok" });
-    } catch (err) {
-        console.error("Razorpay webhook processing error:", err);
-        return res.status(500).json({ error: "Internal webhook processing error" });
-    }
-});
-
 // ========================================
 // FIND / RETRIEVE EXISTING PASSES
 // ========================================
@@ -3183,8 +2873,8 @@ app.post("/api/payu/callback", async (req, res) => {
                 SELECT r.*, e.title AS event_title
                 FROM registrations r
                 LEFT JOIN events e ON e.id = r.event_id
-                WHERE r.payu_txnid = ? OR r.razorpay_order_id = ?
-            `).get(payload.txnid, payload.txnid);
+                WHERE r.payu_txnid = ?
+            `).get(payload.txnid);
         }
 
         if (isSuccess && existing) {
@@ -3221,8 +2911,6 @@ app.post("/api/payu/callback", async (req, res) => {
                         qr_token = ?,
                         payu_txnid = ?,
                         payu_mihpayid = ?,
-                        razorpay_order_id = COALESCE(razorpay_order_id, ?),
-                        razorpay_payment_id = COALESCE(razorpay_payment_id, ?),
                         payment_status = 'paid',
                         payment_method = ?,
                         utr_number = ?,
@@ -3234,8 +2922,6 @@ app.post("/api/payu/callback", async (req, res) => {
                     registrationId,
                     qrNumber,
                     qrToken,
-                    payload.txnid,
-                    payload.mihpayid || "N/A",
                     payload.txnid,
                     payload.mihpayid || "N/A",
                     payload.mode || "PayU",

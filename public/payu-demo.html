@@ -735,7 +735,7 @@
             <p>
                 This workbench allows you to test both <strong>PayU Bolt (Popup Modal)</strong> and 
                 <strong>PayU Hosted Checkout (Redirect Flow)</strong> alongside cryptographic <strong>SHA-512 hash</strong> 
-                generation and verification, without affecting your live Razorpay portal.
+                generation and verification in test sandbox mode.
             </p>
         </section>
 
@@ -764,7 +764,7 @@
                     </div>
 
                     <p style="font-size:13px; color:var(--text-muted); margin-bottom:14px;" id="flowDescription">
-                        <strong>PayU Bolt Popup:</strong> Opens an in-page modal dialog directly over your website (identical user experience to Razorpay).
+                        <strong>PayU Bolt Popup:</strong> Opens an in-page modal dialog directly over your website with seamless card, UPI, and Netbanking options.
                     </p>
 
                     <!-- Credentials Drawer -->
@@ -1089,7 +1089,7 @@ sha512(salt|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amo
             const icon = document.getElementById("submitIcon");
 
             if (mode === "bolt") {
-                desc.innerHTML = "<strong>PayU Bolt Popup:</strong> Opens an in-page modal dialog directly over your website (identical user experience to Razorpay).";
+                desc.innerHTML = "<strong>PayU Bolt Popup:</strong> Opens an in-page modal dialog directly over your website with seamless card, UPI, and Netbanking options.";
                 badge.innerText = "⚡ Bolt Popup Mode";
                 icon.innerText = "⚡";
             } else if (mode === "hosted") {
@@ -1190,7 +1190,7 @@ sha512(salt|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amo
                 document.getElementById("cPayloadJson").innerText = JSON.stringify(data, null, 2);
                 document.getElementById("inspectStatus").innerText = "✓ Hash calculated";
 
-                // FLOW 1: PayU Bolt JS Modal Checkout (In-page popup like Razorpay)
+                // FLOW 1: PayU Bolt JS Modal Checkout (In-page popup modal)
                 if (currentFlow === "bolt") {
                     showStatus("Launching PayU Bolt Modal Checkout...", "info");
                     launchBoltCheckout(data, customSalt);

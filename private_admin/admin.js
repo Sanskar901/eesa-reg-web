@@ -1011,10 +1011,10 @@ function renderGateResult({ statusType, messageTitle, messageDesc, student, code
         </div>
 
         <div class="gate-detail-cell">
-            <div class="gate-detail-label">Razorpay Payment ID</div>
+            <div class="gate-detail-label">Payment ID (PayU)</div>
             <div class="gate-detail-val mono">
-                ${escapeHtml(student.razorpayPaymentId)}
-                ${student.razorpayPaymentId !== 'N/A' ? `<button type="button" class="copy-mini-btn" onclick="copyIdText('${escapeHtml(student.razorpayPaymentId)}', 'Payment ID')">Copy</button>` : ''}
+                ${escapeHtml(student.paymentId || 'N/A')}
+                ${(student.paymentId && student.paymentId !== 'N/A') ? `<button type="button" class="copy-mini-btn" onclick="copyIdText('${escapeHtml(student.paymentId)}', 'Payment ID')">Copy</button>` : ''}
             </div>
         </div>
 
